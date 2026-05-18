@@ -14,7 +14,7 @@
 ## 系统要求
 
 - Windows 10/11
-- .NET 8.0 Runtime（或 .NET SDK 用于开发）
+- .NET 10.0 Runtime（或 .NET SDK 用于开发）
 - 麦克风设备
 - 首次运行需要网络连接（下载模型）
 
@@ -27,12 +27,12 @@
 dotnet build -c Release
 
 # 运行程序
-bin\Release\net8.0-windows\win-x64\MouseClickVoice.exe
+bin\Release\net10.0-windows\win-x64\MouseClickVoice.exe
 ```
 
 ### 方法2: 使用 Visual Studio
 
-1. 打开 `MouseClickVoice.sln`
+1. 打开 `MouseClickVoice.slnx`
 2. 按 F5 或点击"启动"按钮运行
 
 ### 方法3: 使用命令行
@@ -86,9 +86,9 @@ dotnet run
 
 ### 技术栈
 
-- **框架**：.NET 8.0 + WPF
-- **音频**：NAudio 2.2.1
-- **语音识别**：Whisper.net 1.5.0（Whisper Tiny 模型）
+- **框架**：.NET 10.0 + WPF
+- **音频**：NAudio 2.3.0
+- **语音识别**：Whisper.net 1.9.0（Whisper Tiny 模型）
 - **架构**：x64
 
 ## 项目文件结构
@@ -105,7 +105,8 @@ MouseClickVoice/
 ├── App.xaml                # 应用程序定义
 ├── AssemblyInfo.cs         # 程序集信息
 ├── MouseClickVoice.csproj  # 项目文件
-└── MouseClickVoice.sln     # 解决方案文件
+├── MouseClickVoice.slnx    # 解决方案文件
+└── global.json             # SDK 版本锁定
 ```
 
 ## 注意事项
@@ -152,12 +153,12 @@ dotnet restore
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-输出文件位于：`bin\Release\net8.0-windows\win-x64\publish\MouseVoiceInput.exe`
+输出文件位于：`bin\Release\net10.0-windows\win-x64\publish\MouseVoiceInput.exe`
 
 ## 开发环境
 
-- Visual Studio 2022 或 Visual Studio Code
-- .NET 8.0 SDK
+- Visual Studio 2026（或 Visual Studio 2022 17.13+）
+- .NET 10.0 SDK
 - Windows SDK
 
 ## 许可证

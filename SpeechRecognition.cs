@@ -61,7 +61,7 @@ namespace MouseClickVoice
                 }
 
                 // 使用 Whisper.net 下载模型
-                await using var modelStream = await WhisperGgmlDownloader.GetGgmlModelAsync(
+                await using var modelStream = await WhisperGgmlDownloader.Default.GetGgmlModelAsync(
                     GgmlType.Tiny
                 );
 
