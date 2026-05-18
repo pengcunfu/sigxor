@@ -18,6 +18,13 @@ namespace MouseClickVoice
         private bool _isMouseDown;
         private DateTime _mouseDownTime;
         private CancellationTokenSource? _longPressCancellationToken;
+        private int _longPressDurationMs = 1500;
+
+        public int LongPressDurationMs
+        {
+            get => _longPressDurationMs;
+            set => _longPressDurationMs = Math.Max(100, value);
+        }
 
         public event EventHandler<MouseEventArgs>? MousePressed;
         public event EventHandler<MouseEventArgs>? MouseReleased;
@@ -89,7 +96,7 @@ namespace MouseClickVoice
             _longPressCancellationToken?.Cancel();
             _longPressCancellationToken = new CancellationTokenSource();
 
-            Task.Delay(1500, _longPressCancellationToken.Token).ContinueWith(task =>
+            Task.Delay(_longPressDurationMs, _longPressCancellationToken.Token).ContinueWith(task =>
             {
                 if (!task.IsCanceled && _isMouseDown)
                 {

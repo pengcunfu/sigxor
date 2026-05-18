@@ -1,9 +1,12 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using NAudio.Wave;
+using SharpCompress.Common;
+using SharpCompress.Readers;
 using SherpaOnnx;
 
 namespace MouseClickVoice
@@ -14,11 +17,12 @@ namespace MouseClickVoice
         private const string ModelArchiveName = ModelDirName + ".tar.bz2";
         private const string ModelDownloadUrl =
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + ModelArchiveName;
+        private const long MinArchiveBytes = 80L * 1024 * 1024;
 
         private readonly string _modelsDir;
-        private readonly string _modelDir;
-        private readonly string _tokensPath;
-        private readonly string _modelPath;
+        private string _modelDir;
+        private string _tokensPath;
+        private string _modelPath;
 
         private OfflineRecognizer? _recognizer;
         private bool _isInitialized;
@@ -96,8 +100,38 @@ namespace MouseClickVoice
                 _ => "auto"
             };
 
-        private bool IsModelReady() =>
-            File.Exists(_tokensPath) && File.Exists(_modelPath);
+        private bool IsModelReady()
+        {
+            if (File.Exists(_tokensPath) && File.Exists(_modelPath))
+                return true;
+
+            return TryLocateModelFiles();
+        }
+
+        private bool TryLocateModelFiles()
+        {
+            if (!Directory.Exists(_modelsDir))
+                return false;
+
+            var onnxFiles = Directory.GetFiles(_modelsDir, "model.int8.onnx", SearchOption.AllDirectories);
+            foreach (var onnx in onnxFiles)
+            {
+                var dir = Path.GetDirectoryName(onnx);
+                if (dir == null)
+                    continue;
+
+                var tokens = Path.Combine(dir, "tokens.txt");
+                if (!File.Exists(tokens))
+                    continue;
+
+                _modelDir = dir;
+                _modelPath = onnx;
+                _tokensPath = tokens;
+                return true;
+            }
+
+            return false;
+        }
 
         private async Task<bool> EnsureModelAsync()
         {
@@ -110,59 +144,144 @@ namespace MouseClickVoice
             Directory.CreateDirectory(_modelsDir);
 
             var archivePath = Path.Combine(_modelsDir, ModelArchiveName);
+            var needDownload = !File.Exists(archivePath) || !IsArchiveValid(archivePath);
 
-            if (!File.Exists(archivePath))
+            if (needDownload)
             {
+                if (File.Exists(archivePath))
+                    File.Delete(archivePath);
+
                 StatusChanged?.Invoke(this, "正在下载 SenseVoice 模型（约 230MB）...");
                 if (!await DownloadModelArchiveAsync(archivePath))
                     return false;
             }
 
-            StatusChanged?.Invoke(this, "正在解压 SenseVoice 模型...");
-            if (!await ExtractModelArchiveAsync(archivePath, _modelsDir))
-                return false;
+            if (!IsModelReady())
+            {
+                StatusChanged?.Invoke(this, "正在解压 SenseVoice 模型...");
+                var (success, error) = await ExtractModelArchiveAsync(archivePath, _modelsDir);
+                if (!success)
+                {
+                    Error?.Invoke(this, new Exception($"模型解压失败: {error}"));
+                    return false;
+                }
+            }
 
             if (!IsModelReady())
             {
-                Error?.Invoke(this, new Exception("模型解压后未找到 model.int8.onnx 或 tokens.txt"));
+                Error?.Invoke(this, new Exception(
+                    "模型解压后未找到 model.int8.onnx 或 tokens.txt，请删除 models 文件夹后重试"));
                 return false;
             }
 
-            StatusChanged?.Invoke(this, "SenseVoice 模型下载完成");
+            StatusChanged?.Invoke(this, "SenseVoice 模型准备完成");
             return true;
+        }
+
+        private static bool IsArchiveValid(string archivePath)
+        {
+            if (!File.Exists(archivePath))
+                return false;
+
+            var info = new FileInfo(archivePath);
+            return info.Length >= MinArchiveBytes;
         }
 
         private async Task<bool> DownloadModelArchiveAsync(string archivePath)
         {
+            var tempPath = archivePath + ".download";
             try
             {
-                using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+                if (File.Exists(tempPath))
+                    File.Delete(tempPath);
+
+                using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(60) };
                 using var response = await client.GetAsync(ModelDownloadUrl, HttpCompletionOption.ResponseHeadersRead);
                 response.EnsureSuccessStatusCode();
 
                 await using var httpStream = await response.Content.ReadAsStreamAsync();
-                await using var fileStream = File.Create(archivePath);
-                await httpStream.CopyToAsync(fileStream);
+                await using (var fileStream = File.Create(tempPath))
+                {
+                    await httpStream.CopyToAsync(fileStream);
+                }
 
+                if (!IsArchiveValid(tempPath))
+                {
+                    Error?.Invoke(this, new Exception(
+                        "下载的模型文件不完整，请检查网络后重试（需约 80MB 以上）"));
+                    return false;
+                }
+
+                if (File.Exists(archivePath))
+                    File.Delete(archivePath);
+
+                File.Move(tempPath, archivePath);
                 return true;
             }
             catch (Exception ex)
             {
-                if (File.Exists(archivePath))
-                    File.Delete(archivePath);
+                if (File.Exists(tempPath))
+                    File.Delete(tempPath);
 
                 Error?.Invoke(this, new Exception($"模型下载失败: {ex.Message}"));
                 return false;
             }
         }
 
-        private static async Task<bool> ExtractModelArchiveAsync(string archivePath, string destDir)
+        private static async Task<(bool success, string error)> ExtractModelArchiveAsync(
+            string archivePath, string destDir)
+        {
+            var sharpResult = await Task.Run(() => ExtractWithSharpCompress(archivePath, destDir));
+            if (sharpResult.success)
+                return sharpResult;
+
+            var tarResult = await ExtractWithTarAsync(archivePath, destDir);
+            if (tarResult.success)
+                return tarResult;
+
+            return (false, $"{sharpResult.error}; {tarResult.error}");
+        }
+
+        private static (bool success, string error) ExtractWithSharpCompress(string archivePath, string destDir)
         {
             try
             {
+                using var stream = File.OpenRead(archivePath);
+                using var reader = ReaderFactory.Open(stream);
+                while (reader.MoveToNextEntry())
+                {
+                    if (reader.Entry.IsDirectory)
+                        continue;
+
+                    reader.WriteEntryToDirectory(destDir, new ExtractionOptions
+                    {
+                        ExtractFullPath = true,
+                        Overwrite = true
+                    });
+                }
+
+                return (true, string.Empty);
+            }
+            catch (Exception ex)
+            {
+                return (false, $"SharpCompress: {ex.Message}");
+            }
+        }
+
+        private static async Task<(bool success, string error)> ExtractWithTarAsync(
+            string archivePath, string destDir)
+        {
+            try
+            {
+                var tarPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.System), "tar.exe");
+
+                if (!File.Exists(tarPath))
+                    tarPath = "tar";
+
                 var startInfo = new ProcessStartInfo
                 {
-                    FileName = "tar",
+                    FileName = tarPath,
                     Arguments = $"-xjf \"{archivePath}\" -C \"{destDir}\"",
                     UseShellExecute = false,
                     CreateNoWindow = true,
@@ -172,14 +291,21 @@ namespace MouseClickVoice
 
                 using var process = Process.Start(startInfo);
                 if (process == null)
-                    return false;
+                    return (false, "无法启动 tar 进程");
 
+                var stderr = await process.StandardError.ReadToEndAsync();
                 await process.WaitForExitAsync();
-                return process.ExitCode == 0;
+
+                if (process.ExitCode == 0)
+                    return (true, string.Empty);
+
+                return (false, string.IsNullOrWhiteSpace(stderr)
+                    ? $"tar 退出码 {process.ExitCode}"
+                    : stderr.Trim());
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return false;
+                return (false, $"tar: {ex.Message}");
             }
         }
 
@@ -265,7 +391,6 @@ namespace MouseClickVoice
             if (string.IsNullOrWhiteSpace(text))
                 return null;
 
-            // SenseVoice 输出可能带语言/情感等前缀标签，保留可读文本
             return text.Trim();
         }
 

@@ -29,6 +29,10 @@
                     <TextBlock x:Name="MouseStatusText" Text="等待中..." Foreground="Gray"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="5">
+                    <TextBlock Text="快捷键:" Width="80"/>
+                    <TextBlock x:Name="ShortcutStatusText" Text="等待中..." Foreground="Gray"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="5">
                     <TextBlock Text="录音状态:" Width="80"/>
                     <TextBlock x:Name="RecordingStatusText" Text="未开始" Foreground="Gray"/>
                 </StackPanel>
@@ -88,7 +92,7 @@
         </StackPanel>
 
         <!-- 说明 -->
-        <TextBlock Grid.Row="4" Text="使用说明：按住鼠标左键1.5秒开始语音输入"
+        <TextBlock Grid.Row="4" Text="使用说明：按住鼠标左键 1.5 秒，或按住右 Alt 键进行语音输入"
                    HorizontalAlignment="Center" FontSize="12" Foreground="Gray"
                    TextWrapping="Wrap"/>
     </Grid>
