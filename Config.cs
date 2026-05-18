@@ -45,8 +45,11 @@ namespace MouseClickVoice
         public bool UseClipboard { get; set; } = false;
 
         // 应用程序设置
-        [JsonPropertyName("startMinimized")]
-        public bool StartMinimized { get; set; } = false;
+        [JsonPropertyName("silentStart")]
+        public bool SilentStart { get; set; } = false;
+
+        [JsonPropertyName("minimizeToTray")]
+        public bool MinimizeToTray { get; set; } = true;
 
         [JsonPropertyName("autoStartWithWindows")]
         public bool AutoStartWithWindows { get; set; } = false;
@@ -129,7 +132,8 @@ namespace MouseClickVoice
             ConfidenceThreshold = 0.6;
             TypingDelay = 0.05;
             UseClipboard = false;
-            StartMinimized = false;
+            SilentStart = false;
+            MinimizeToTray = true;
             AutoStartWithWindows = false;
             ShowNotifications = true;
             DebugMode = false;

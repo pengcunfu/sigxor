@@ -1,15 +1,26 @@
-﻿using System.Configuration;
-using System.Data;
+﻿using System.Linq;
 using System.Windows;
 using Application = System.Windows.Application;
 
 namespace MouseClickVoice
 {
-    /// <summary>
-    /// Interaction logic for App.xaml
-    /// </summary>
     public partial class App : Application
     {
-    }
+        public static bool LaunchSilent { get; private set; }
 
+        protected override void OnStartup(StartupEventArgs e)
+        {
+            LaunchSilent = e.Args.Contains("--silent") || Config.Instance.SilentStart;
+
+            var mainWindow = new MainWindow();
+            MainWindow = mainWindow;
+
+            if (LaunchSilent)
+                mainWindow.PrepareSilentStartup();
+            else
+                mainWindow.Show();
+
+            base.OnStartup(e);
+        }
+    }
 }
