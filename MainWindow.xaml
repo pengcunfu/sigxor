@@ -6,84 +6,89 @@
         xmlns:local="clr-namespace:MouseClickVoice"
         mc:Ignorable="d"
         Title="语音输入" Height="480" Width="400"
-        WindowStartupLocation="CenterScreen">
-    <Grid Margin="10">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+        WindowStartupLocation="CenterScreen"
+        Icon="icon.png">
+    <DockPanel>
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="服务(_S)">
+                <MenuItem x:Name="StartServiceMenuItem" Header="开始服务(_S)" Click="StartServiceMenuItem_Click"/>
+                <MenuItem x:Name="StopServiceMenuItem" Header="停止服务(_T)" IsEnabled="False" Click="StopServiceMenuItem_Click"/>
+            </MenuItem>
+            <MenuItem Header="帮助(_H)">
+                <MenuItem Header="关于(_A)" Click="AboutMenuItem_Click"/>
+            </MenuItem>
+            <MenuItem Header="退出(_X)" Click="ExitMenuItem_Click"/>
+        </Menu>
 
-        <!-- 标题 -->
-        <TextBlock Grid.Row="0" Text="语音输入程序"
-                   FontSize="18" FontWeight="Bold"
-                   HorizontalAlignment="Center" Margin="0,0,0,20"/>
+        <Grid Margin="10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
-        <!-- 状态显示 -->
-        <GroupBox Grid.Row="1" Header="状态" Margin="0,0,0,10">
-            <StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="5">
-                    <TextBlock Text="快捷键:" Width="80"/>
-                    <TextBlock x:Name="ShortcutStatusText" Text="等待中..." Foreground="Gray"/>
+            <GroupBox Grid.Row="0" Header="状态" Margin="0,0,0,10">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="5">
+                        <TextBlock Text="快捷键:" Width="80"/>
+                        <TextBlock x:Name="ShortcutStatusText" Text="等待中..." Foreground="Gray"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="5">
+                        <TextBlock Text="录音状态:" Width="80"/>
+                        <TextBlock x:Name="RecordingStatusText" Text="未开始" Foreground="Gray"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="5">
+                        <TextBlock Text="识别状态:" Width="80"/>
+                        <TextBlock x:Name="RecognitionStatusText" Text="未启动" Foreground="Gray"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="5">
+                        <TextBlock Text="最后识别:" Width="80"/>
+                        <TextBlock x:Name="LastRecognizedText" Text="无" TextWrapping="Wrap"/>
+                    </StackPanel>
                 </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="5">
-                    <TextBlock Text="录音状态:" Width="80"/>
-                    <TextBlock x:Name="RecordingStatusText" Text="未开始" Foreground="Gray"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="5">
-                    <TextBlock Text="识别状态:" Width="80"/>
-                    <TextBlock x:Name="RecognitionStatusText" Text="未启动" Foreground="Gray"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="5">
-                    <TextBlock Text="最后识别:" Width="80"/>
-                    <TextBlock x:Name="LastRecognizedText" Text="无" TextWrapping="Wrap"/>
-                </StackPanel>
-            </StackPanel>
-        </GroupBox>
+            </GroupBox>
 
-        <!-- 设置 -->
-        <GroupBox Grid.Row="2" Header="设置" Margin="0,0,0,10">
-            <StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="5">
-                    <TextBlock Text="识别引擎:" Width="80"/>
-                    <ComboBox x:Name="EngineComboBox" Width="150" SelectionChanged="EngineComboBox_SelectionChanged">
-                        <ComboBoxItem Content="SenseVoice（推荐）" Tag="sensevoice" IsSelected="True"/>
-                        <ComboBoxItem Content="Whisper" Tag="whisper"/>
-                    </ComboBox>
+            <GroupBox Grid.Row="1" Header="设置" Margin="0,0,0,10">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="5">
+                        <TextBlock Text="识别引擎:" Width="80"/>
+                        <ComboBox x:Name="EngineComboBox" Width="150" SelectionChanged="EngineComboBox_SelectionChanged">
+                            <ComboBoxItem Content="SenseVoice（推荐）" Tag="sensevoice" IsSelected="True"/>
+                            <ComboBoxItem Content="Whisper" Tag="whisper"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="5">
+                        <TextBlock Text="识别语言:" Width="80"/>
+                        <ComboBox x:Name="LanguageComboBox" Width="150" SelectionChanged="LanguageComboBox_SelectionChanged">
+                            <ComboBoxItem Content="中文" Tag="zh-CN" IsSelected="True"/>
+                            <ComboBoxItem Content="English" Tag="en-US"/>
+                            <ComboBoxItem Content="粤语" Tag="yue"/>
+                            <ComboBoxItem Content="日语" Tag="ja"/>
+                            <ComboBoxItem Content="韩语" Tag="ko"/>
+                            <ComboBoxItem Content="自动" Tag="auto"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <CheckBox x:Name="ShowNotificationsCheckBox" Content="显示通知"
+                              Margin="5" Checked="ShowNotificationsCheckBox_Changed"
+                              Unchecked="ShowNotificationsCheckBox_Changed"/>
+                    <CheckBox x:Name="UseClipboardCheckBox" Content="使用剪贴板粘贴"
+                              Margin="5" Checked="UseClipboardCheckBox_Changed"
+                              Unchecked="UseClipboardCheckBox_Changed"/>
+                    <CheckBox x:Name="SilentStartCheckBox" Content="静默启动（仅托盘，不显示窗口）"
+                              Margin="5" Checked="SilentStartCheckBox_Changed"
+                              Unchecked="SilentStartCheckBox_Changed"/>
+                    <CheckBox x:Name="MinimizeToTrayCheckBox" Content="关闭窗口时最小化到托盘"
+                              Margin="5" Checked="MinimizeToTrayCheckBox_Changed"
+                              Unchecked="MinimizeToTrayCheckBox_Changed"/>
+                    <CheckBox x:Name="AutoStartCheckBox" Content="开机自启动"
+                              Margin="5" Checked="AutoStartCheckBox_Changed"
+                              Unchecked="AutoStartCheckBox_Changed"/>
                 </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="5">
-                    <TextBlock Text="识别语言:" Width="80"/>
-                    <ComboBox x:Name="LanguageComboBox" Width="150" SelectionChanged="LanguageComboBox_SelectionChanged">
-                        <ComboBoxItem Content="中文" Tag="zh-CN" IsSelected="True"/>
-                        <ComboBoxItem Content="English" Tag="en-US"/>
-                        <ComboBoxItem Content="粤语" Tag="yue"/>
-                        <ComboBoxItem Content="日语" Tag="ja"/>
-                        <ComboBoxItem Content="韩语" Tag="ko"/>
-                        <ComboBoxItem Content="自动" Tag="auto"/>
-                    </ComboBox>
-                </StackPanel>
-                <CheckBox x:Name="ShowNotificationsCheckBox" Content="显示通知"
-                          Margin="5" Checked="ShowNotificationsCheckBox_Changed"
-                          Unchecked="ShowNotificationsCheckBox_Changed"/>
-                <CheckBox x:Name="UseClipboardCheckBox" Content="使用剪贴板粘贴"
-                          Margin="5" Checked="UseClipboardCheckBox_Changed"
-                          Unchecked="UseClipboardCheckBox_Changed"/>
-            </StackPanel>
-        </GroupBox>
+            </GroupBox>
 
-        <!-- 操作按钮 -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
-            <Button x:Name="StartButton" Content="开始服务" Width="100" Height="30"
-                    Margin="5" Click="StartButton_Click"/>
-            <Button x:Name="StopButton" Content="停止服务" Width="100" Height="30"
-                    Margin="5" IsEnabled="False" Click="StopButton_Click"/>
-        </StackPanel>
-
-        <!-- 说明 -->
-        <TextBlock Grid.Row="4" Text="使用说明：右 Alt 短按开始/再按结束（长录音），或按住右 Alt 松手结束（短句）"
-                   HorizontalAlignment="Center" FontSize="12" Foreground="Gray"
-                   TextWrapping="Wrap"/>
-    </Grid>
+            <TextBlock Grid.Row="2" Text="使用说明：右 Alt 短按开始/再按结束（长录音），或按住右 Alt 松手结束（短句）"
+                       HorizontalAlignment="Center" FontSize="12" Foreground="Gray"
+                       TextWrapping="Wrap"/>
+        </Grid>
+    </DockPanel>
 </Window>

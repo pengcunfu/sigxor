@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -23,6 +24,9 @@ namespace MouseClickVoice
         private SpeechRecognizer? _speechRecognizer;
         private TextSimulator? _textSimulator;
         private VoiceInputOverlay? _voiceOverlay;
+        private TrayIconManager? _trayIcon;
+        private bool _serviceRunning;
+        private bool _isExiting;
         private bool _isRecording;
         private bool _isShortcutDown;
         private bool _altHoldTriggeredThisPress;
@@ -48,11 +52,55 @@ namespace MouseClickVoice
             Loaded += OnWindowLoaded;
         }
 
+        public void PrepareSilentStartup()
+        {
+            Hide();
+            ShowInTaskbar = false;
+        }
+
         private async void OnWindowLoaded(object sender, RoutedEventArgs e)
         {
             Loaded -= OnWindowLoaded;
             await StartService();
         }
+
+        private void ShowMainWindow()
+        {
+            Show();
+            ShowInTaskbar = true;
+            WindowState = WindowState.Normal;
+            Activate();
+        }
+
+        private void ShowAboutDialog()
+        {
+            var about = new AboutWindow { Owner = IsVisible ? this : null };
+            about.ShowDialog();
+        }
+
+        private void ExitApplication()
+        {
+            _isExiting = true;
+            StopService();
+            _trayIcon?.Dispose();
+            _trayIcon = null;
+            System.Windows.Application.Current.Shutdown();
+        }
+
+        private void UpdateServiceMenuState()
+        {
+            StartServiceMenuItem.IsEnabled = !_serviceRunning;
+            StopServiceMenuItem.IsEnabled = _serviceRunning;
+            _trayIcon?.SetServiceRunning(_serviceRunning);
+        }
+
+        private async void StartServiceMenuItem_Click(object sender, RoutedEventArgs e) => await StartService();
+
+        private void StopServiceMenuItem_Click(object sender, RoutedEventArgs e) => StopService();
+
+        private void AboutMenuItem_Click(object sender, RoutedEventArgs e) => ShowAboutDialog();
+
+        private void ExitMenuItem_Click(object sender, RoutedEventArgs e) => ExitApplication();
 
         private void LoadUserSettings()
         {
@@ -67,11 +115,22 @@ namespace MouseClickVoice
                         SelectComboBoxByTag(EngineComboBox, _config.RecognitionEngine);
                         SelectComboBoxByTag(LanguageComboBox, _config.RecognitionLanguage);
 
-                        if (ShowNotificationsCheckBox != null && UseClipboardCheckBox != null)
+                        if (ShowNotificationsCheckBox != null)
                         {
                             ShowNotificationsCheckBox.IsChecked = _config.ShowNotifications;
                             UseClipboardCheckBox.IsChecked = _config.UseClipboard;
+                            SilentStartCheckBox.IsChecked = _config.SilentStart;
+                            MinimizeToTrayCheckBox.IsChecked = _config.MinimizeToTray;
+                            var autoStart = _config.AutoStartWithWindows;
+                            if (autoStart != StartupHelper.IsEnabled())
+                            {
+                                try { StartupHelper.SetEnabled(autoStart); }
+                                catch { AutoStartCheckBox.IsChecked = StartupHelper.IsEnabled(); }
+                            }
+                            AutoStartCheckBox.IsChecked = StartupHelper.IsEnabled();
                         }
+
+                        UpdateServiceMenuState();
                     }
                     catch (Exception ex)
                     {
@@ -101,22 +160,19 @@ namespace MouseClickVoice
                 _textSimulator = new TextSimulator(_config.TypingDelay);
                 _voiceOverlay = new VoiceInputOverlay();
 
+                _trayIcon = new TrayIconManager();
+                _trayIcon.ShowWindowRequested += (_, _) => ShowMainWindow();
+                _trayIcon.StartServiceRequested += async (_, _) => await StartService();
+                _trayIcon.StopServiceRequested += (_, _) => StopService();
+                _trayIcon.AboutRequested += (_, _) => ShowAboutDialog();
+                _trayIcon.ExitRequested += (_, _) => ExitApplication();
+
                 RecognitionStatusText.Text = "已初始化";
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"初始化服务失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
-        }
-
-        private async void StartButton_Click(object sender, RoutedEventArgs e)
-        {
-            await StartService();
-        }
-
-        private void StopButton_Click(object sender, RoutedEventArgs e)
-        {
-            StopService();
         }
 
         private async Task StartService()
@@ -145,8 +201,8 @@ namespace MouseClickVoice
                 _keyboardHook?.Start();
                 await Task.Delay(100);
 
-                StartButton.IsEnabled = false;
-                StopButton.IsEnabled = true;
+                _serviceRunning = true;
+                UpdateServiceMenuState();
 
                 ShowNotification("服务已启动", "使用右 Alt 键进行语音输入");
                 RecognitionStatusText.Text = $"{_speechRecognizer?.EngineName ?? engineName} 就绪";
@@ -171,8 +227,8 @@ namespace MouseClickVoice
                 _activeTrigger = RecordingTrigger.None;
                 _voiceOverlay?.HideOverlay();
 
-                StartButton.IsEnabled = true;
-                StopButton.IsEnabled = false;
+                _serviceRunning = false;
+                UpdateServiceMenuState();
 
                 ShowNotification("服务已停止", "语音输入功能已关闭");
             }
@@ -425,24 +481,78 @@ namespace MouseClickVoice
         private void ShowNotification(string title, string message)
         {
             if (_config.ShowNotifications)
+                _trayIcon?.ShowBalloon(title, message);
+
+            System.Diagnostics.Debug.WriteLine($"{title}: {message}");
+        }
+
+        private void SilentStartCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (SilentStartCheckBox == null)
+                return;
+
+            _config.SilentStart = SilentStartCheckBox.IsChecked == true;
+            _config.Save();
+        }
+
+        private void MinimizeToTrayCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (MinimizeToTrayCheckBox == null)
+                return;
+
+            _config.MinimizeToTray = MinimizeToTrayCheckBox.IsChecked == true;
+            _config.Save();
+        }
+
+        private void AutoStartCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (AutoStartCheckBox == null)
+                return;
+
+            try
             {
-                // 这里可以使用Windows通知API
-                System.Diagnostics.Debug.WriteLine($"{title}: {message}");
+                var enabled = AutoStartCheckBox.IsChecked == true;
+                StartupHelper.SetEnabled(enabled);
+                _config.AutoStartWithWindows = enabled;
+                _config.Save();
             }
+            catch (Exception ex)
+            {
+                AutoStartCheckBox.IsChecked = StartupHelper.IsEnabled();
+                MessageBox.Show($"设置开机自启动失败: {ex.Message}", "错误",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            if (!_isExiting && _config.MinimizeToTray)
+            {
+                e.Cancel = true;
+                Hide();
+                ShowInTaskbar = false;
+                ShowNotification("语音输入", "程序已最小化到托盘");
+                return;
+            }
+
+            base.OnClosing(e);
         }
 
         protected override void OnClosed(EventArgs e)
         {
             try
             {
-                StopService();
-                _statusTimer?.Stop();
+                if (!_isExiting)
+                    StopService();
 
+                _statusTimer?.Stop();
                 _keyboardHook?.Dispose();
                 _audioCapture?.Dispose();
                 _speechRecognizer?.Dispose();
                 _voiceOverlay?.Close();
                 _voiceOverlay = null;
+                _trayIcon?.Dispose();
+                _trayIcon = null;
             }
             catch (Exception ex)
             {
@@ -454,10 +564,8 @@ namespace MouseClickVoice
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
-            if (e.Key == Key.Escape)
-            {
-                Close();
-            }
+            if (e.Key == Key.Escape && IsVisible)
+                Hide();
             base.OnKeyDown(e);
         }
     }
