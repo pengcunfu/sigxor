@@ -1,0 +1,34 @@
+<Window x:Class="MouseClickVoice.AboutWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="关于"
+        Height="280" Width="380"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="语音输入"
+                   FontSize="22" FontWeight="Bold" HorizontalAlignment="Center"/>
+        <TextBlock x:Name="VersionText" Grid.Row="1"
+                   Margin="0,6,0,16" HorizontalAlignment="Center"
+                   Foreground="Gray" FontSize="13"/>
+
+        <TextBlock Grid.Row="2" TextWrapping="Wrap" LineHeight="22" Foreground="#333">
+            基于 SenseVoice / Whisper 的本地语音识别工具。<LineBreak/>
+            使用右 Alt 快捷键进行语音输入：<LineBreak/>
+            · 短按：开始/结束长录音<LineBreak/>
+            · 按住：松手结束短句录音
+        </TextBlock>
+
+        <Button Grid.Row="3" Content="确定" Width="80" Height="30"
+                HorizontalAlignment="Center" Margin="0,16,0,0"
+                IsDefault="True" Click="OkButton_Click"/>
+    </Grid>
+</Window>
