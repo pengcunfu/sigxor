@@ -16,16 +16,14 @@ namespace MouseClickVoice
     /// </summary>
     public partial class MainWindow : Window
     {
-        private enum RecordingTrigger { None, Mouse, KeyboardHold, KeyboardToggle }
+        private enum RecordingTrigger { None, KeyboardHold, KeyboardToggle }
 
-        private MouseHook? _mouseHook;
         private KeyboardHook? _keyboardHook;
         private AudioCapture? _audioCapture;
         private SpeechRecognizer? _speechRecognizer;
         private TextSimulator? _textSimulator;
         private VoiceInputOverlay? _voiceOverlay;
         private bool _isRecording;
-        private bool _isMouseDown;
         private bool _isShortcutDown;
         private bool _altHoldTriggeredThisPress;
         private bool _keyboardToggleActive;
@@ -46,6 +44,14 @@ namespace MouseClickVoice
             };
             _statusTimer.Tick += UpdateStatus;
             _statusTimer.Start();
+
+            Loaded += OnWindowLoaded;
+        }
+
+        private async void OnWindowLoaded(object sender, RoutedEventArgs e)
+        {
+            Loaded -= OnWindowLoaded;
+            await StartService();
         }
 
         private void LoadUserSettings()
@@ -58,12 +64,6 @@ namespace MouseClickVoice
                 {
                     try
                     {
-                        if (LongPressSlider != null && LongPressValueText != null)
-                        {
-                            LongPressSlider.Value = _config.LongPressDuration;
-                            LongPressValueText.Text = $"{_config.LongPressDuration:F1}s";
-                        }
-
                         SelectComboBoxByTag(EngineComboBox, _config.RecognitionEngine);
                         SelectComboBoxByTag(LanguageComboBox, _config.RecognitionLanguage);
 
@@ -85,12 +85,6 @@ namespace MouseClickVoice
         {
             try
             {
-                _mouseHook = new MouseHook();
-                _mouseHook.LongPressDurationMs = (int)(_config.LongPressDuration * 1000);
-                _mouseHook.MousePressed += OnMousePressed;
-                _mouseHook.MouseReleased += OnMouseReleased;
-                _mouseHook.LongPressDetected += OnLongPressDetected;
-
                 _keyboardHook = new KeyboardHook();
                 _keyboardHook.HoldThresholdMs = (int)(_config.AltHoldThreshold * 1000);
                 _keyboardHook.ShortcutPressed += OnShortcutPressed;
@@ -148,14 +142,13 @@ namespace MouseClickVoice
                     }
                 }
 
-                _mouseHook?.Start();
                 _keyboardHook?.Start();
                 await Task.Delay(100);
 
                 StartButton.IsEnabled = false;
                 StopButton.IsEnabled = true;
 
-                ShowNotification("服务已启动", "按住鼠标左键或右 Alt 键进行语音输入");
+                ShowNotification("服务已启动", "使用右 Alt 键进行语音输入");
                 RecognitionStatusText.Text = $"{_speechRecognizer?.EngineName ?? engineName} 就绪";
             }
             catch (Exception ex)
@@ -168,12 +161,10 @@ namespace MouseClickVoice
         {
             try
             {
-                _mouseHook?.Stop();
                 _keyboardHook?.Stop();
                 _audioCapture?.StopRecording();
 
                 _isRecording = false;
-                _isMouseDown = false;
                 _isShortcutDown = false;
                 _altHoldTriggeredThisPress = false;
                 _keyboardToggleActive = false;
@@ -197,36 +188,6 @@ namespace MouseClickVoice
                 action();
             else
                 Dispatcher.BeginInvoke(action);
-        }
-
-        private void OnMousePressed(object? sender, MouseEventArgs e)
-        {
-            RunOnUiThread(() =>
-            {
-                _isMouseDown = true;
-                MouseStatusText.Text = "按下";
-            });
-        }
-
-        private void OnMouseReleased(object? sender, MouseEventArgs e)
-        {
-            RunOnUiThread(() =>
-            {
-                _isMouseDown = false;
-                MouseStatusText.Text = "释放";
-
-                if (_isRecording && _activeTrigger == RecordingTrigger.Mouse)
-                    StopRecording();
-            });
-        }
-
-        private void OnLongPressDetected(object? sender, MouseEventArgs e)
-        {
-            RunOnUiThread(() =>
-            {
-                if (_isMouseDown && !_isRecording)
-                    StartRecording(RecordingTrigger.Mouse);
-            });
         }
 
         private void OnShortcutPressed(object? sender, EventArgs e)
@@ -386,23 +347,8 @@ namespace MouseClickVoice
 
         private void UpdateStatus(object? sender, EventArgs e)
         {
-            if (!_isMouseDown && MouseStatusText.Text != "等待中...")
-                MouseStatusText.Text = "等待中...";
-
             if (!_isShortcutDown && ShortcutStatusText.Text != "等待中...")
                 ShortcutStatusText.Text = "等待中...";
-        }
-
-        private void LongPressSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (LongPressValueText != null)
-            {
-                LongPressValueText.Text = $"{e.NewValue:F1}s";
-                _config.LongPressDuration = e.NewValue;
-                if (_mouseHook != null)
-                    _mouseHook.LongPressDurationMs = (int)(e.NewValue * 1000);
-                _config.Save();
-            }
         }
 
         private static void SelectComboBoxByTag(System.Windows.Controls.ComboBox? comboBox, string tagValue)
@@ -492,7 +438,6 @@ namespace MouseClickVoice
                 StopService();
                 _statusTimer?.Stop();
 
-                _mouseHook?.Dispose();
                 _keyboardHook?.Dispose();
                 _audioCapture?.Dispose();
                 _speechRecognizer?.Dispose();

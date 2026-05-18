@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:MouseClickVoice"
         mc:Ignorable="d"
-        Title="鼠标语音输入" Height="500" Width="400"
+        Title="语音输入" Height="480" Width="400"
         WindowStartupLocation="CenterScreen">
     <Grid Margin="10">
         <Grid.RowDefinitions>
@@ -17,17 +17,13 @@
         </Grid.RowDefinitions>
 
         <!-- 标题 -->
-        <TextBlock Grid.Row="0" Text="鼠标语音输入程序"
+        <TextBlock Grid.Row="0" Text="语音输入程序"
                    FontSize="18" FontWeight="Bold"
                    HorizontalAlignment="Center" Margin="0,0,0,20"/>
 
         <!-- 状态显示 -->
         <GroupBox Grid.Row="1" Header="状态" Margin="0,0,0,10">
             <StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="5">
-                    <TextBlock Text="鼠标状态:" Width="80"/>
-                    <TextBlock x:Name="MouseStatusText" Text="等待中..." Foreground="Gray"/>
-                </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="5">
                     <TextBlock Text="快捷键:" Width="80"/>
                     <TextBlock x:Name="ShortcutStatusText" Text="等待中..." Foreground="Gray"/>
@@ -50,12 +46,6 @@
         <!-- 设置 -->
         <GroupBox Grid.Row="2" Header="设置" Margin="0,0,0,10">
             <StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="5" VerticalAlignment="Center">
-                    <TextBlock Text="长按时间:" Width="80"/>
-                    <Slider x:Name="LongPressSlider" Minimum="0.5" Maximum="3" Value="1.5"
-                            Width="150" ValueChanged="LongPressSlider_ValueChanged"/>
-                    <TextBlock x:Name="LongPressValueText" Text="1.5s" Margin="5,0,0,0" Width="40"/>
-                </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="5">
                     <TextBlock Text="识别引擎:" Width="80"/>
                     <ComboBox x:Name="EngineComboBox" Width="150" SelectionChanged="EngineComboBox_SelectionChanged">
@@ -92,7 +82,7 @@
         </StackPanel>
 
         <!-- 说明 -->
-        <TextBlock Grid.Row="4" Text="使用说明：鼠标左键长按录音；右 Alt 短按开始/再按结束（长录音），或按住右 Alt 松手结束（短句）"
+        <TextBlock Grid.Row="4" Text="使用说明：右 Alt 短按开始/再按结束（长录音），或按住右 Alt 松手结束（短句）"
                    HorizontalAlignment="Center" FontSize="12" Foreground="Gray"
                    TextWrapping="Wrap"/>
     </Grid>

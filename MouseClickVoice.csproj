@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyTitle>鼠标语音输入</AssemblyTitle>
-    <AssemblyDescription>鼠标左键长按语音输入程序</AssemblyDescription>
+    <AssemblyDescription>右 Alt 快捷键语音输入程序</AssemblyDescription>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
     <PublishSingleFile>true</PublishSingleFile>
