@@ -96,7 +96,6 @@ namespace MouseClickVoice
                 _audioCapture.StatusChanged += OnAudioStatusChanged;
 
                 _speechRecognizer = new SpeechRecognizer();
-                _speechRecognizer.TextRecognized += OnTextRecognized;
                 _speechRecognizer.StatusChanged += OnRecognitionStatusChanged;
                 _speechRecognizer.Error += OnSpeechError;
 
@@ -372,7 +371,6 @@ namespace MouseClickVoice
                     // 切换引擎后需重新初始化
                     _speechRecognizer?.Dispose();
                     _speechRecognizer = new SpeechRecognizer();
-                    _speechRecognizer.TextRecognized += OnTextRecognized;
                     _speechRecognizer.StatusChanged += OnRecognitionStatusChanged;
                     _speechRecognizer.Error += OnSpeechError;
 

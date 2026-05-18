@@ -5,7 +5,6 @@ namespace MouseClickVoice
 {
     public interface ISpeechEngine : IDisposable
     {
-        event EventHandler<string>? TextRecognized;
         event EventHandler<string>? StatusChanged;
         event EventHandler<Exception>? Error;
 

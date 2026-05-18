@@ -28,7 +28,6 @@ namespace MouseClickVoice
         private bool _isInitialized;
         private readonly object _lock = new();
 
-        public event EventHandler<string>? TextRecognized;
         public event EventHandler<string>? StatusChanged;
         public event EventHandler<Exception>? Error;
 
@@ -332,10 +331,6 @@ namespace MouseClickVoice
 
                     var text = CleanResult(stream.Result.Text);
                     StatusChanged?.Invoke(this, "识别完成");
-
-                    if (!string.IsNullOrWhiteSpace(text))
-                        TextRecognized?.Invoke(this, text);
-
                     return text;
                 }
                 catch (Exception ex)

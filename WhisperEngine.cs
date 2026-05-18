@@ -15,7 +15,6 @@ namespace MouseClickVoice
         private bool _isInitialized;
         private bool _isModelDownloaded;
 
-        public event EventHandler<string>? TextRecognized;
         public event EventHandler<string>? StatusChanged;
         public event EventHandler<Exception>? Error;
 
@@ -45,11 +44,6 @@ namespace MouseClickVoice
                 _whisperFactory = WhisperFactory.FromPath(_modelPath);
                 _processor = _whisperFactory.CreateBuilder()
                     .WithLanguage("zh")
-                    .WithSegmentEventHandler(segment =>
-                    {
-                        if (!string.IsNullOrWhiteSpace(segment.Text))
-                            TextRecognized?.Invoke(this, segment.Text);
-                    })
                     .Build();
 
                 _isInitialized = true;

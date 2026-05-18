@@ -7,7 +7,6 @@ namespace MouseClickVoice
     {
         private ISpeechEngine? _engine;
 
-        public event EventHandler<string>? TextRecognized;
         public event EventHandler<string>? StatusChanged;
         public event EventHandler<Exception>? Error;
 
@@ -57,7 +56,6 @@ namespace MouseClickVoice
 
         private void WireEvents(ISpeechEngine engine)
         {
-            engine.TextRecognized += (s, e) => TextRecognized?.Invoke(s, e);
             engine.StatusChanged += (s, e) => StatusChanged?.Invoke(s, e);
             engine.Error += (s, e) => Error?.Invoke(s, e);
         }
