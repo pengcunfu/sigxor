@@ -23,6 +23,7 @@ namespace MouseClickVoice
         private AudioCapture? _audioCapture;
         private SpeechRecognizer? _speechRecognizer;
         private TextSimulator? _textSimulator;
+        private VoiceInputOverlay? _voiceOverlay;
         private bool _isRecording;
         private bool _isMouseDown;
         private bool _isShortcutDown;
@@ -100,6 +101,7 @@ namespace MouseClickVoice
                 _speechRecognizer.Error += OnSpeechError;
 
                 _textSimulator = new TextSimulator(_config.TypingDelay);
+                _voiceOverlay = new VoiceInputOverlay();
 
                 RecognitionStatusText.Text = "已初始化";
             }
@@ -170,6 +172,7 @@ namespace MouseClickVoice
                 _isMouseDown = false;
                 _isShortcutDown = false;
                 _activeTrigger = RecordingTrigger.None;
+                _voiceOverlay?.HideOverlay();
 
                 StartButton.IsEnabled = true;
                 StopButton.IsEnabled = false;
@@ -228,12 +231,14 @@ namespace MouseClickVoice
                 _activeTrigger = trigger;
                 _isRecording = true;
                 _audioCapture?.StartRecording(_config.SampleRate, _config.Channels, _config.BitDepth);
+                _voiceOverlay?.ShowRecording();
             }
             catch (Exception ex)
             {
                 ShowNotification("录音启动失败", ex.Message);
                 _isRecording = false;
                 _activeTrigger = RecordingTrigger.None;
+                _voiceOverlay?.HideOverlay();
             }
         }
 
@@ -247,6 +252,7 @@ namespace MouseClickVoice
                 _isRecording = false;
                 _activeTrigger = RecordingTrigger.None;
                 _audioCapture?.StopRecording();
+                _voiceOverlay?.ShowProcessing();
 
                 // 获取完整的音频数据并进行识别
                 var audioData = _audioCapture?.GetCompleteAudio();
@@ -255,13 +261,14 @@ namespace MouseClickVoice
                     RecognitionStatusText.Text = "正在识别...";
                     var result = await _speechRecognizer.RecognizeFromBufferAsync(audioData, _config.SampleRate);
                     if (!string.IsNullOrEmpty(result))
-                    {
                         OnTextRecognized(this, result);
-                    }
                 }
+
+                _voiceOverlay?.HideOverlay();
             }
             catch (Exception ex)
             {
+                _voiceOverlay?.HideOverlay();
                 ShowNotification("录音停止失败", ex.Message);
             }
         }
@@ -431,6 +438,8 @@ namespace MouseClickVoice
                 _keyboardHook?.Dispose();
                 _audioCapture?.Dispose();
                 _speechRecognizer?.Dispose();
+                _voiceOverlay?.Close();
+                _voiceOverlay = null;
             }
             catch (Exception ex)
             {
