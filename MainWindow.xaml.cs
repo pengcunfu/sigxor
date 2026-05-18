@@ -16,7 +16,7 @@ namespace MouseClickVoice
     /// </summary>
     public partial class MainWindow : Window
     {
-        private enum RecordingTrigger { None, Mouse, Keyboard }
+        private enum RecordingTrigger { None, Mouse, KeyboardHold, KeyboardToggle }
 
         private MouseHook? _mouseHook;
         private KeyboardHook? _keyboardHook;
@@ -27,6 +27,8 @@ namespace MouseClickVoice
         private bool _isRecording;
         private bool _isMouseDown;
         private bool _isShortcutDown;
+        private bool _altHoldTriggeredThisPress;
+        private bool _keyboardToggleActive;
         private RecordingTrigger _activeTrigger = RecordingTrigger.None;
         private readonly DispatcherTimer _statusTimer;
         private readonly Config _config;
@@ -90,8 +92,10 @@ namespace MouseClickVoice
                 _mouseHook.LongPressDetected += OnLongPressDetected;
 
                 _keyboardHook = new KeyboardHook();
+                _keyboardHook.HoldThresholdMs = (int)(_config.AltHoldThreshold * 1000);
                 _keyboardHook.ShortcutPressed += OnShortcutPressed;
                 _keyboardHook.ShortcutReleased += OnShortcutReleased;
+                _keyboardHook.ShortcutHoldDetected += OnShortcutHoldDetected;
 
                 _audioCapture = new AudioCapture();
                 _audioCapture.StatusChanged += OnAudioStatusChanged;
@@ -171,6 +175,8 @@ namespace MouseClickVoice
                 _isRecording = false;
                 _isMouseDown = false;
                 _isShortcutDown = false;
+                _altHoldTriggeredThisPress = false;
+                _keyboardToggleActive = false;
                 _activeTrigger = RecordingTrigger.None;
                 _voiceOverlay?.HideOverlay();
 
@@ -185,43 +191,94 @@ namespace MouseClickVoice
             }
         }
 
+        private void RunOnUiThread(Action action)
+        {
+            if (Dispatcher.CheckAccess())
+                action();
+            else
+                Dispatcher.BeginInvoke(action);
+        }
+
         private void OnMousePressed(object? sender, MouseEventArgs e)
         {
-            _isMouseDown = true;
-            MouseStatusText.Text = "按下";
+            RunOnUiThread(() =>
+            {
+                _isMouseDown = true;
+                MouseStatusText.Text = "按下";
+            });
         }
 
         private void OnMouseReleased(object? sender, MouseEventArgs e)
         {
-            _isMouseDown = false;
-            MouseStatusText.Text = "释放";
+            RunOnUiThread(() =>
+            {
+                _isMouseDown = false;
+                MouseStatusText.Text = "释放";
 
-            if (_isRecording && _activeTrigger == RecordingTrigger.Mouse)
-                StopRecording();
+                if (_isRecording && _activeTrigger == RecordingTrigger.Mouse)
+                    StopRecording();
+            });
         }
 
         private void OnLongPressDetected(object? sender, MouseEventArgs e)
         {
-            if (_isMouseDown && !_isRecording)
-                StartRecording(RecordingTrigger.Mouse);
+            RunOnUiThread(() =>
+            {
+                if (_isMouseDown && !_isRecording)
+                    StartRecording(RecordingTrigger.Mouse);
+            });
         }
 
         private void OnShortcutPressed(object? sender, EventArgs e)
         {
-            _isShortcutDown = true;
-            ShortcutStatusText.Text = "按下";
+            RunOnUiThread(() =>
+            {
+                _isShortcutDown = true;
+                _altHoldTriggeredThisPress = false;
+                ShortcutStatusText.Text = _keyboardToggleActive ? "录音中" : "按下";
+            });
+        }
 
-            if (!_isRecording)
-                StartRecording(RecordingTrigger.Keyboard);
+        private void OnShortcutHoldDetected(object? sender, EventArgs e)
+        {
+            RunOnUiThread(() =>
+            {
+                if (!_isShortcutDown || _isRecording)
+                    return;
+
+                _altHoldTriggeredThisPress = true;
+                ShortcutStatusText.Text = "长按录音";
+                StartRecording(RecordingTrigger.KeyboardHold);
+            });
         }
 
         private void OnShortcutReleased(object? sender, EventArgs e)
         {
-            _isShortcutDown = false;
-            ShortcutStatusText.Text = "释放";
+            RunOnUiThread(() =>
+            {
+                _isShortcutDown = false;
 
-            if (_isRecording && _activeTrigger == RecordingTrigger.Keyboard)
-                StopRecording();
+                if (_altHoldTriggeredThisPress)
+                {
+                    ShortcutStatusText.Text = "释放";
+                    if (_isRecording && _activeTrigger == RecordingTrigger.KeyboardHold)
+                        StopRecording();
+                    return;
+                }
+
+                // 短按：点击切换长录音
+                if (_keyboardToggleActive)
+                {
+                    ShortcutStatusText.Text = "结束";
+                    StopRecording();
+                }
+                else if (!_isRecording)
+                {
+                    ShortcutStatusText.Text = "录音中(再按结束)";
+                    StartRecording(RecordingTrigger.KeyboardToggle);
+                    _keyboardToggleActive = true;
+                }
+            });
         }
 
         private void StartRecording(RecordingTrigger trigger)
@@ -251,6 +308,7 @@ namespace MouseClickVoice
             {
                 _isRecording = false;
                 _activeTrigger = RecordingTrigger.None;
+                _keyboardToggleActive = false;
                 _audioCapture?.StopRecording();
                 _voiceOverlay?.ShowProcessing();
 

@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace MouseClickVoice
 {
@@ -17,9 +19,14 @@ namespace MouseClickVoice
         private readonly LowLevelKeyboardProc _proc;
         private bool _isHooked;
         private bool _isKeyDown;
+        private CancellationTokenSource? _holdCts;
+
+        /// <summary>按住超过该时长视为「长按模式」，否则为「点击切换」</summary>
+        public int HoldThresholdMs { get; set; } = 400;
 
         public event EventHandler? ShortcutPressed;
         public event EventHandler? ShortcutReleased;
+        public event EventHandler? ShortcutHoldDetected;
 
         public KeyboardHook()
         {
@@ -50,6 +57,7 @@ namespace MouseClickVoice
             _hookId = IntPtr.Zero;
             _isHooked = false;
             _isKeyDown = false;
+            CancelHoldTimer();
         }
 
         private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -65,11 +73,13 @@ namespace MouseClickVoice
                     if (isKeyDown && !_isKeyDown)
                     {
                         _isKeyDown = true;
+                        StartHoldTimer();
                         ShortcutPressed?.Invoke(this, EventArgs.Empty);
                     }
                     else if (isKeyUp && _isKeyDown)
                     {
                         _isKeyDown = false;
+                        CancelHoldTimer();
                         ShortcutReleased?.Invoke(this, EventArgs.Empty);
                     }
                 }
@@ -78,7 +88,31 @@ namespace MouseClickVoice
             return CallNextHookEx(_hookId, nCode, wParam, lParam);
         }
 
-        public void Dispose() => Stop();
+        private void StartHoldTimer()
+        {
+            CancelHoldTimer();
+            _holdCts = new CancellationTokenSource();
+            var token = _holdCts.Token;
+
+            Task.Delay(HoldThresholdMs, token).ContinueWith(task =>
+            {
+                if (!task.IsCanceled && _isKeyDown)
+                    ShortcutHoldDetected?.Invoke(this, EventArgs.Empty);
+            }, TaskScheduler.Default);
+        }
+
+        private void CancelHoldTimer()
+        {
+            _holdCts?.Cancel();
+            _holdCts?.Dispose();
+            _holdCts = null;
+        }
+
+        public void Dispose()
+        {
+            Stop();
+            CancelHoldTimer();
+        }
 
         #region Windows API
 

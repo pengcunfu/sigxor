@@ -92,7 +92,7 @@
         </StackPanel>
 
         <!-- 说明 -->
-        <TextBlock Grid.Row="4" Text="使用说明：按住鼠标左键 1.5 秒，或按住右 Alt 键进行语音输入"
+        <TextBlock Grid.Row="4" Text="使用说明：鼠标左键长按录音；右 Alt 短按开始/再按结束（长录音），或按住右 Alt 松手结束（短句）"
                    HorizontalAlignment="Center" FontSize="12" Foreground="Gray"
                    TextWrapping="Wrap"/>
     </Grid>

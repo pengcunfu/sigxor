@@ -17,6 +17,10 @@ namespace MouseClickVoice
         [JsonPropertyName("longPressDuration")]
         public double LongPressDuration { get; set; } = 1.5;
 
+        /// <summary>右 Alt 按住超过该秒数视为长按模式，否则为点击切换</summary>
+        [JsonPropertyName("altHoldThreshold")]
+        public double AltHoldThreshold { get; set; } = 0.4;
+
         // 音频录制设置
         [JsonPropertyName("sampleRate")]
         public int SampleRate { get; set; } = 16000;
@@ -121,6 +125,7 @@ namespace MouseClickVoice
         public void ResetToDefaults()
         {
             LongPressDuration = 1.5;
+            AltHoldThreshold = 0.4;
             SampleRate = 16000;
             Channels = 1;
             BitDepth = 16;
