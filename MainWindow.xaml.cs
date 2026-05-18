@@ -56,17 +56,8 @@ namespace MouseClickVoice
                             LongPressValueText.Text = $"{_config.LongPressDuration:F1}s";
                         }
 
-                        if (LanguageComboBox != null)
-                        {
-                            foreach (ComboBoxItem item in LanguageComboBox.Items)
-                            {
-                                if (item.Tag?.ToString() == _config.RecognitionLanguage)
-                                {
-                                    LanguageComboBox.SelectedItem = item;
-                                    break;
-                                }
-                            }
-                        }
+                        SelectComboBoxByTag(EngineComboBox, _config.RecognitionEngine);
+                        SelectComboBoxByTag(LanguageComboBox, _config.RecognitionLanguage);
 
                         if (ShowNotificationsCheckBox != null && UseClipboardCheckBox != null)
                         {
@@ -123,14 +114,15 @@ namespace MouseClickVoice
         {
             try
             {
-                // 首先初始化 Whisper
-                RecognitionStatusText.Text = "正在初始化 Whisper...";
+                var engineName = _config.RecognitionEngine.Equals("whisper", StringComparison.OrdinalIgnoreCase)
+                    ? "Whisper" : "SenseVoice";
+                RecognitionStatusText.Text = $"正在初始化 {engineName}...";
                 if (_speechRecognizer != null && !_speechRecognizer.IsInitialized)
                 {
                     var initSuccess = await _speechRecognizer.InitializeAsync();
                     if (!initSuccess)
                     {
-                        MessageBox.Show("Whisper 初始化失败，请检查网络连接和模型下载", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show($"{engineName} 初始化失败，请检查网络连接和模型下载", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                         return;
                     }
                 }
@@ -142,7 +134,7 @@ namespace MouseClickVoice
                 StopButton.IsEnabled = true;
 
                 ShowNotification("服务已启动", "按住鼠标左键1.5秒开始语音输入");
-                RecognitionStatusText.Text = "Whisper 就绪";
+                RecognitionStatusText.Text = $"{_speechRecognizer?.EngineName ?? engineName} 就绪";
             }
             catch (Exception ex)
             {
@@ -303,6 +295,50 @@ namespace MouseClickVoice
                 LongPressValueText.Text = $"{e.NewValue:F1}s";
                 _config.LongPressDuration = e.NewValue;
                 _config.Save();
+            }
+        }
+
+        private static void SelectComboBoxByTag(System.Windows.Controls.ComboBox? comboBox, string tagValue)
+        {
+            if (comboBox == null)
+                return;
+
+            foreach (ComboBoxItem item in comboBox.Items)
+            {
+                if (item.Tag?.ToString() == tagValue)
+                {
+                    comboBox.SelectedItem = item;
+                    break;
+                }
+            }
+        }
+
+        private void EngineComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            try
+            {
+                if (EngineComboBox?.SelectedItem is ComboBoxItem item && item.Tag != null)
+                {
+                    var newEngine = item.Tag.ToString()!;
+                    if (_config.RecognitionEngine == newEngine)
+                        return;
+
+                    _config.RecognitionEngine = newEngine;
+                    _config.Save();
+
+                    // 切换引擎后需重新初始化
+                    _speechRecognizer?.Dispose();
+                    _speechRecognizer = new SpeechRecognizer();
+                    _speechRecognizer.TextRecognized += OnTextRecognized;
+                    _speechRecognizer.StatusChanged += OnRecognitionStatusChanged;
+                    _speechRecognizer.Error += OnSpeechError;
+
+                    RecognitionStatusText.Text = "引擎已切换，请重新启动服务";
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"引擎选择错误: {ex.Message}");
             }
         }
 

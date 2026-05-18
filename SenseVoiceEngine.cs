@@ -1,0 +1,278 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Net.Http;
+using System.Threading.Tasks;
+using NAudio.Wave;
+using SherpaOnnx;
+
+namespace MouseClickVoice
+{
+    public class SenseVoiceEngine : ISpeechEngine
+    {
+        private const string ModelDirName = "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17";
+        private const string ModelArchiveName = ModelDirName + ".tar.bz2";
+        private const string ModelDownloadUrl =
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + ModelArchiveName;
+
+        private readonly string _modelsDir;
+        private readonly string _modelDir;
+        private readonly string _tokensPath;
+        private readonly string _modelPath;
+
+        private OfflineRecognizer? _recognizer;
+        private bool _isInitialized;
+        private readonly object _lock = new();
+
+        public event EventHandler<string>? TextRecognized;
+        public event EventHandler<string>? StatusChanged;
+        public event EventHandler<Exception>? Error;
+
+        public string EngineName => "SenseVoice";
+
+        public bool IsInitialized => _isInitialized;
+
+        public SenseVoiceEngine()
+        {
+            _modelsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "models");
+            _modelDir = Path.Combine(_modelsDir, ModelDirName);
+            _tokensPath = Path.Combine(_modelDir, "tokens.txt");
+            _modelPath = Path.Combine(_modelDir, "model.int8.onnx");
+        }
+
+        public async Task<bool> InitializeAsync()
+        {
+            try
+            {
+                if (_isInitialized)
+                    return true;
+
+                StatusChanged?.Invoke(this, "正在初始化 SenseVoice 引擎...");
+
+                if (!await EnsureModelAsync())
+                    return false;
+
+                var config = BuildRecognizerConfig();
+                _recognizer = new OfflineRecognizer(config);
+
+                _isInitialized = true;
+                StatusChanged?.Invoke(this, "SenseVoice 引擎初始化完成");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Error?.Invoke(this, new Exception($"SenseVoice 初始化失败: {ex.Message}"));
+                return false;
+            }
+        }
+
+        private OfflineRecognizerConfig BuildRecognizerConfig()
+        {
+            var cfg = Config.Instance;
+
+            var config = new OfflineRecognizerConfig();
+            config.FeatConfig.SampleRate = cfg.SampleRate;
+            config.FeatConfig.FeatureDim = 80;
+            config.ModelConfig.Tokens = _tokensPath;
+            config.ModelConfig.NumThreads = Math.Max(1, Environment.ProcessorCount / 2);
+            config.ModelConfig.Provider = "cpu";
+            config.ModelConfig.Debug = 0;
+            config.ModelConfig.SenseVoice.Model = _modelPath;
+            config.ModelConfig.SenseVoice.Language = MapLanguage(cfg.RecognitionLanguage);
+            config.ModelConfig.SenseVoice.UseInverseTextNormalization = 1;
+            config.DecodingMethod = "greedy_search";
+
+            return config;
+        }
+
+        private static string MapLanguage(string recognitionLanguage) =>
+            recognitionLanguage switch
+            {
+                "zh-CN" or "zh" => "zh",
+                "en-US" or "en" => "en",
+                "ja" => "ja",
+                "ko" => "ko",
+                "yue" => "yue",
+                _ => "auto"
+            };
+
+        private bool IsModelReady() =>
+            File.Exists(_tokensPath) && File.Exists(_modelPath);
+
+        private async Task<bool> EnsureModelAsync()
+        {
+            if (IsModelReady())
+            {
+                StatusChanged?.Invoke(this, "SenseVoice 模型已就绪");
+                return true;
+            }
+
+            Directory.CreateDirectory(_modelsDir);
+
+            var archivePath = Path.Combine(_modelsDir, ModelArchiveName);
+
+            if (!File.Exists(archivePath))
+            {
+                StatusChanged?.Invoke(this, "正在下载 SenseVoice 模型（约 230MB）...");
+                if (!await DownloadModelArchiveAsync(archivePath))
+                    return false;
+            }
+
+            StatusChanged?.Invoke(this, "正在解压 SenseVoice 模型...");
+            if (!await ExtractModelArchiveAsync(archivePath, _modelsDir))
+                return false;
+
+            if (!IsModelReady())
+            {
+                Error?.Invoke(this, new Exception("模型解压后未找到 model.int8.onnx 或 tokens.txt"));
+                return false;
+            }
+
+            StatusChanged?.Invoke(this, "SenseVoice 模型下载完成");
+            return true;
+        }
+
+        private async Task<bool> DownloadModelArchiveAsync(string archivePath)
+        {
+            try
+            {
+                using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+                using var response = await client.GetAsync(ModelDownloadUrl, HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
+
+                await using var httpStream = await response.Content.ReadAsStreamAsync();
+                await using var fileStream = File.Create(archivePath);
+                await httpStream.CopyToAsync(fileStream);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (File.Exists(archivePath))
+                    File.Delete(archivePath);
+
+                Error?.Invoke(this, new Exception($"模型下载失败: {ex.Message}"));
+                return false;
+            }
+        }
+
+        private static async Task<bool> ExtractModelArchiveAsync(string archivePath, string destDir)
+        {
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "tar",
+                    Arguments = $"-xjf \"{archivePath}\" -C \"{destDir}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+
+                using var process = Process.Start(startInfo);
+                if (process == null)
+                    return false;
+
+                await process.WaitForExitAsync();
+                return process.ExitCode == 0;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        public Task<string?> RecognizeFromFileAsync(string wavFilePath)
+        {
+            return Task.Run(() => RecognizeFromFile(wavFilePath));
+        }
+
+        private string? RecognizeFromFile(string wavFilePath)
+        {
+            lock (_lock)
+            {
+                try
+                {
+                    if (_recognizer == null || !File.Exists(wavFilePath))
+                        return null;
+
+                    StatusChanged?.Invoke(this, "正在识别语音...");
+
+                    using var stream = _recognizer.CreateStream();
+                    var (sampleRate, samples) = LoadWavSamples(wavFilePath);
+                    stream.AcceptWaveform(sampleRate, samples);
+                    _recognizer.Decode(stream);
+
+                    var text = CleanResult(stream.Result.Text);
+                    StatusChanged?.Invoke(this, "识别完成");
+
+                    if (!string.IsNullOrWhiteSpace(text))
+                        TextRecognized?.Invoke(this, text);
+
+                    return text;
+                }
+                catch (Exception ex)
+                {
+                    Error?.Invoke(this, new Exception($"语音识别失败: {ex.Message}"));
+                    return null;
+                }
+            }
+        }
+
+        public async Task<string?> RecognizeFromBufferAsync(byte[] audioBuffer, int sampleRate = 16000)
+        {
+            if (audioBuffer == null || audioBuffer.Length == 0)
+                return null;
+
+            if (!_isInitialized && !await InitializeAsync())
+                return null;
+
+            var tempFile = Path.GetTempFileName() + ".wav";
+            try
+            {
+                using (var writer = new WaveFileWriter(tempFile, new WaveFormat(sampleRate, 16, 1)))
+                {
+                    writer.Write(audioBuffer, 0, audioBuffer.Length);
+                }
+
+                return await RecognizeFromFileAsync(tempFile);
+            }
+            finally
+            {
+                if (File.Exists(tempFile))
+                    File.Delete(tempFile);
+            }
+        }
+
+        private static (int sampleRate, float[] samples) LoadWavSamples(string wavFilePath)
+        {
+            using var reader = new AudioFileReader(wavFilePath);
+            var buffer = new float[4096];
+            var samples = new List<float>();
+            int read;
+            while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                for (var i = 0; i < read; i++)
+                    samples.Add(buffer[i]);
+            }
+
+            return ((int)reader.WaveFormat.SampleRate, samples.ToArray());
+        }
+
+        private static string? CleanResult(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+
+            // SenseVoice 输出可能带语言/情感等前缀标签，保留可读文本
+            return text.Trim();
+        }
+
+        public void Dispose()
+        {
+            _recognizer = null;
+            _isInitialized = false;
+        }
+    }
+}

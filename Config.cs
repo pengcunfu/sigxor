@@ -28,6 +28,9 @@ namespace MouseClickVoice
         public int BitDepth { get; set; } = 16;
 
         // 语音识别设置
+        [JsonPropertyName("recognitionEngine")]
+        public string RecognitionEngine { get; set; } = "sensevoice";
+
         [JsonPropertyName("recognitionLanguage")]
         public string RecognitionLanguage { get; set; } = "zh-CN";
 
@@ -121,6 +124,7 @@ namespace MouseClickVoice
             SampleRate = 16000;
             Channels = 1;
             BitDepth = 16;
+            RecognitionEngine = "sensevoice";
             RecognitionLanguage = "zh-CN";
             ConfidenceThreshold = 0.6;
             TypingDelay = 0.05;

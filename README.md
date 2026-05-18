@@ -1,12 +1,12 @@
 # 鼠标左键长按语音输入程序
 
-一个支持鼠标左键长按激活语音输入的 C# WPF 桌面应用程序，使用 Whisper AI 模型进行中文语音识别。
+一个支持鼠标左键长按激活语音输入的 C# WPF 桌面应用程序，默认使用阿里 **SenseVoice** 模型进行多语言语音识别，也可切换为 Whisper。
 
 ## 功能特点
 
 - **鼠标左键长按检测**：按住鼠标左键1.5秒激活语音输入
 - **实时语音录制**：使用系统麦克风进行实时语音录制
-- **AI 语音识别**：使用 OpenAI Whisper 模型进行本地语音识别
+- **AI 语音识别**：默认 SenseVoice（中英日韩粤），可选 Whisper Tiny
 - **自动输入**：将识别的文字自动输入到当前焦点位置
 - **可配置**：支持自定义长按时间、采样率等参数
 - **离线运行**：模型下载后可离线使用
@@ -48,8 +48,8 @@ dotnet run
 
 2. **首次使用**
    - 点击"开始服务"按钮
-   - 等待 Whisper 模型自动下载（约 40MB，仅首次）
-   - 模型下载完成后显示"Whisper 就绪"
+   - 等待 SenseVoice 模型自动下载（约 230MB，仅首次）
+   - 模型下载完成后显示"SenseVoice 就绪"
 
 3. **开始语音输入**
    - 在任意可输入文本的地方，按住鼠标左键1.5秒
@@ -80,7 +80,7 @@ dotnet run
 
 - **MouseHook**：Windows 钩子技术检测鼠标事件
 - **AudioCapture**：NAudio 库实现音频捕获
-- **SpeechRecognition**：Whisper.net 实现语音识别
+- **SpeechRecognition**：SenseVoice（sherpa-onnx）/ Whisper.net 双引擎
 - **TextSimulator**：Win32 API 模拟键盘输入
 - **Config**：JSON 配置文件管理
 
@@ -88,7 +88,7 @@ dotnet run
 
 - **框架**：.NET 10.0 + WPF
 - **音频**：NAudio 2.3.0
-- **语音识别**：Whisper.net 1.9.0（Whisper Tiny 模型）
+- **语音识别**：SenseVoice（org.k2fsa.sherpa.onnx 1.13.2）/ Whisper.net 1.9.0
 - **架构**：x64
 
 ## 项目文件结构
@@ -115,7 +115,7 @@ MouseClickVoice/
 2. **麦克风权限**：确保程序有麦克风访问权限
 3. **管理员权限**：建议以管理员身份运行以获得全局鼠标钩子权限
 4. **模型下载**：首次运行需要网络连接下载 Whisper 模型（约 40MB）
-5. **隐私保护**：语音识别使用本地 Whisper 模型，数据不会上传到外部服务器
+5. **隐私保护**：语音识别使用本地模型，数据不会上传到外部服务器（仅首次下载模型需联网）
 
 ## 故障排除
 
@@ -144,8 +144,9 @@ dotnet restore
 ### 模型下载问题
 
 - 确保网络连接正常
-- 模型会保存在程序目录的 `models` 文件夹中
-- 如下载失败，可手动下载 ggml-tiny.bin 模型文件
+- SenseVoice 模型保存在 `models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/`
+- Whisper 模型保存在 `models/ggml-tiny.bin`
+- SenseVoice 手动下载：[sherpa-onnx 发布页](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2)，解压到 `models/` 目录
 
 ## 构建单文件发布版本
 

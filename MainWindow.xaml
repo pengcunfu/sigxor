@@ -53,10 +53,21 @@
                     <TextBlock x:Name="LongPressValueText" Text="1.5s" Margin="5,0,0,0" Width="40"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="5">
+                    <TextBlock Text="识别引擎:" Width="80"/>
+                    <ComboBox x:Name="EngineComboBox" Width="150" SelectionChanged="EngineComboBox_SelectionChanged">
+                        <ComboBoxItem Content="SenseVoice（推荐）" Tag="sensevoice" IsSelected="True"/>
+                        <ComboBoxItem Content="Whisper" Tag="whisper"/>
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="5">
                     <TextBlock Text="识别语言:" Width="80"/>
                     <ComboBox x:Name="LanguageComboBox" Width="150" SelectionChanged="LanguageComboBox_SelectionChanged">
                         <ComboBoxItem Content="中文" Tag="zh-CN" IsSelected="True"/>
                         <ComboBoxItem Content="English" Tag="en-US"/>
+                        <ComboBoxItem Content="粤语" Tag="yue"/>
+                        <ComboBoxItem Content="日语" Tag="ja"/>
+                        <ComboBoxItem Content="韩语" Tag="ko"/>
+                        <ComboBoxItem Content="自动" Tag="auto"/>
                     </ComboBox>
                 </StackPanel>
                 <CheckBox x:Name="ShowNotificationsCheckBox" Content="显示通知"
