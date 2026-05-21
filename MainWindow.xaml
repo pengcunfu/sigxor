@@ -13,11 +13,13 @@
             <MenuItem Header="服务(_S)">
                 <MenuItem x:Name="StartServiceMenuItem" Header="开始服务(_S)" Click="StartServiceMenuItem_Click"/>
                 <MenuItem x:Name="StopServiceMenuItem" Header="停止服务(_T)" IsEnabled="False" Click="StopServiceMenuItem_Click"/>
+                <Separator/>
+                <MenuItem Header="退出(_X)" Click="ExitMenuItem_Click"/>
             </MenuItem>
+            <MenuItem Header="模型管理(_M)" Click="ModelManagementMenuItem_Click"/>
             <MenuItem Header="帮助(_H)">
                 <MenuItem Header="关于(_A)" Click="AboutMenuItem_Click"/>
             </MenuItem>
-            <MenuItem Header="退出(_X)" Click="ExitMenuItem_Click"/>
         </Menu>
 
         <Grid Margin="10">
@@ -52,10 +54,8 @@
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="5">
                         <TextBlock Text="识别引擎:" Width="80"/>
-                        <ComboBox x:Name="EngineComboBox" Width="150" SelectionChanged="EngineComboBox_SelectionChanged">
-                            <ComboBoxItem Content="SenseVoice（推荐）" Tag="sensevoice" IsSelected="True"/>
-                            <ComboBoxItem Content="Whisper" Tag="whisper"/>
-                        </ComboBox>
+                        <ComboBox x:Name="EngineComboBox" Width="150"
+                                  SelectionChanged="EngineComboBox_SelectionChanged"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="5">
                         <TextBlock Text="识别语言:" Width="80"/>
@@ -74,7 +74,7 @@
                     <CheckBox x:Name="UseClipboardCheckBox" Content="使用剪贴板粘贴"
                               Margin="5" Checked="UseClipboardCheckBox_Changed"
                               Unchecked="UseClipboardCheckBox_Changed"/>
-                    <CheckBox x:Name="SilentStartCheckBox" Content="静默启动（仅托盘，不显示窗口）"
+                    <CheckBox x:Name="SilentStartCheckBox" Content="开机自启动时静默（仅托盘，不显示窗口）"
                               Margin="5" Checked="SilentStartCheckBox_Changed"
                               Unchecked="SilentStartCheckBox_Changed"/>
                     <CheckBox x:Name="MinimizeToTrayCheckBox" Content="关闭窗口时最小化到托盘"

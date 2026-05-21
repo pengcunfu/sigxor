@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using NAudio.Wave;
 using SharpCompress.Common;
@@ -37,10 +38,68 @@ namespace MouseClickVoice
 
         public SenseVoiceEngine()
         {
-            _modelsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "models");
+            _modelsDir = SpeechModelManager.ModelsDirectory;
             _modelDir = Path.Combine(_modelsDir, ModelDirName);
             _tokensPath = Path.Combine(_modelDir, "tokens.txt");
             _modelPath = Path.Combine(_modelDir, "model.int8.onnx");
+        }
+
+        public static bool IsModelInstalled()
+        {
+            var engine = new SenseVoiceEngine();
+            return engine.IsModelReady();
+        }
+
+        public static long GetModelSizeOnDisk()
+        {
+            var modelsDir = SpeechModelManager.ModelsDirectory;
+            if (!Directory.Exists(modelsDir))
+                return 0;
+
+            long total = 0;
+            var dir = Path.Combine(modelsDir, ModelDirName);
+            if (Directory.Exists(dir))
+            {
+                total += Directory.GetFiles(dir, "*", SearchOption.AllDirectories)
+                    .Sum(f => new FileInfo(f).Length);
+            }
+
+            var archive = Path.Combine(modelsDir, ModelArchiveName);
+            if (File.Exists(archive))
+                total += new FileInfo(archive).Length;
+
+            return total;
+        }
+
+        public static bool DeleteModel()
+        {
+            var modelsDir = SpeechModelManager.ModelsDirectory;
+            if (!Directory.Exists(modelsDir))
+                return true;
+
+            var dir = Path.Combine(modelsDir, ModelDirName);
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+
+            var archive = Path.Combine(modelsDir, ModelArchiveName);
+            if (File.Exists(archive))
+                File.Delete(archive);
+
+            var temp = archive + ".download";
+            if (File.Exists(temp))
+                File.Delete(temp);
+
+            return true;
+        }
+
+        public static async Task<bool> DownloadModelAsync(
+            Action<string>? status = null,
+            CancellationToken cancellationToken = default)
+        {
+            var engine = new SenseVoiceEngine();
+            engine.StatusChanged += (_, msg) => status?.Invoke(msg);
+            engine.Error += (_, ex) => status?.Invoke(ex.Message);
+            return await engine.EnsureModelAsync(cancellationToken);
         }
 
         public async Task<bool> InitializeAsync()
@@ -52,8 +111,12 @@ namespace MouseClickVoice
 
                 StatusChanged?.Invoke(this, "正在初始化 SenseVoice 引擎...");
 
-                if (!await EnsureModelAsync())
+                if (!IsModelReady())
+                {
+                    Error?.Invoke(this, new Exception(
+                        "SenseVoice 模型未下载，请在「工具 → 模型管理」中下载后再启动服务"));
                     return false;
+                }
 
                 var config = BuildRecognizerConfig();
                 _recognizer = new OfflineRecognizer(config);
@@ -132,7 +195,7 @@ namespace MouseClickVoice
             return false;
         }
 
-        private async Task<bool> EnsureModelAsync()
+        private async Task<bool> EnsureModelAsync(CancellationToken cancellationToken = default)
         {
             if (IsModelReady())
             {
@@ -140,6 +203,7 @@ namespace MouseClickVoice
                 return true;
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(_modelsDir);
 
             var archivePath = Path.Combine(_modelsDir, ModelArchiveName);
@@ -151,9 +215,11 @@ namespace MouseClickVoice
                     File.Delete(archivePath);
 
                 StatusChanged?.Invoke(this, "正在下载 SenseVoice 模型（约 230MB）...");
-                if (!await DownloadModelArchiveAsync(archivePath))
+                if (!await DownloadModelArchiveAsync(archivePath, cancellationToken))
                     return false;
             }
+
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (!IsModelReady())
             {
@@ -169,7 +235,7 @@ namespace MouseClickVoice
             if (!IsModelReady())
             {
                 Error?.Invoke(this, new Exception(
-                    "模型解压后未找到 model.int8.onnx 或 tokens.txt，请删除 models 文件夹后重试"));
+                    "模型解压后未找到 model.int8.onnx 或 tokens.txt，请删除后重新下载"));
                 return false;
             }
 
@@ -186,7 +252,9 @@ namespace MouseClickVoice
             return info.Length >= MinArchiveBytes;
         }
 
-        private async Task<bool> DownloadModelArchiveAsync(string archivePath)
+        private async Task<bool> DownloadModelArchiveAsync(
+            string archivePath,
+            CancellationToken cancellationToken = default)
         {
             var tempPath = archivePath + ".download";
             try
@@ -195,7 +263,10 @@ namespace MouseClickVoice
                     File.Delete(tempPath);
 
                 using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(60) };
-                using var response = await client.GetAsync(ModelDownloadUrl, HttpCompletionOption.ResponseHeadersRead);
+                using var response = await client.GetAsync(
+                    ModelDownloadUrl,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken);
                 response.EnsureSuccessStatusCode();
 
                 await using var httpStream = await response.Content.ReadAsStreamAsync();
@@ -346,8 +417,11 @@ namespace MouseClickVoice
             if (audioBuffer == null || audioBuffer.Length == 0)
                 return null;
 
-            if (!_isInitialized && !await InitializeAsync())
+            if (!_isInitialized)
+            {
+                Error?.Invoke(this, new Exception("SenseVoice 引擎未初始化"));
                 return null;
+            }
 
             var tempFile = Path.GetTempFileName() + ".wav";
             try

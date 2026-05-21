@@ -10,7 +10,8 @@ namespace MouseClickVoice
 
         protected override void OnStartup(StartupEventArgs e)
         {
-            LaunchSilent = e.Args.Contains("--silent") || Config.Instance.SilentStart;
+            // 仅开机自启动（注册表带 --silent）时静默；用户双击启动始终显示窗口
+            LaunchSilent = e.Args.Contains("--silent");
 
             var mainWindow = new MainWindow();
             MainWindow = mainWindow;

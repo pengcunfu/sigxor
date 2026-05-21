@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using NAudio.Wave;
 using Whisper.net;
@@ -13,7 +14,6 @@ namespace MouseClickVoice
         private WhisperProcessor? _processor;
         private readonly string _modelPath;
         private bool _isInitialized;
-        private bool _isModelDownloaded;
 
         public event EventHandler<string>? StatusChanged;
         public event EventHandler<Exception>? Error;
@@ -24,9 +24,36 @@ namespace MouseClickVoice
 
         public WhisperEngine()
         {
-            var appDir = AppDomain.CurrentDomain.BaseDirectory;
-            var modelsDir = Path.Combine(appDir, "models");
-            _modelPath = Path.Combine(modelsDir, "ggml-tiny.bin");
+            _modelPath = Path.Combine(SpeechModelManager.ModelsDirectory, "ggml-tiny.bin");
+        }
+
+        public static bool IsModelInstalled() => File.Exists(GetModelPath());
+
+        public static string GetModelPath() =>
+            Path.Combine(SpeechModelManager.ModelsDirectory, "ggml-tiny.bin");
+
+        public static long GetModelSizeOnDisk()
+        {
+            var path = GetModelPath();
+            return File.Exists(path) ? new FileInfo(path).Length : 0;
+        }
+
+        public static bool DeleteModel()
+        {
+            var path = GetModelPath();
+            if (File.Exists(path))
+                File.Delete(path);
+            return true;
+        }
+
+        public static async Task<bool> DownloadModelAsync(
+            Action<string>? status = null,
+            CancellationToken cancellationToken = default)
+        {
+            var engine = new WhisperEngine();
+            engine.StatusChanged += (_, msg) => status?.Invoke(msg);
+            engine.Error += (_, ex) => status?.Invoke(ex.Message);
+            return await engine.DownloadModelFilesAsync(cancellationToken);
         }
 
         public async Task<bool> InitializeAsync()
@@ -38,8 +65,12 @@ namespace MouseClickVoice
 
                 StatusChanged?.Invoke(this, "正在初始化 Whisper 引擎...");
 
-                if (!await DownloadModelAsync())
+                if (!IsModelInstalled())
+                {
+                    Error?.Invoke(this, new Exception(
+                        "Whisper 模型未下载，请在「工具 → 模型管理」中下载后再启动服务"));
                     return false;
+                }
 
                 _whisperFactory = WhisperFactory.FromPath(_modelPath);
                 _processor = _whisperFactory.CreateBuilder()
@@ -57,32 +88,35 @@ namespace MouseClickVoice
             }
         }
 
-        private async Task<bool> DownloadModelAsync()
+        private async Task<bool> DownloadModelFilesAsync(CancellationToken cancellationToken = default)
         {
             try
             {
-                if (_isModelDownloaded)
-                    return true;
-
-                StatusChanged?.Invoke(this, "正在下载 Whisper tiny 模型...");
-
-                var modelsDir = Path.GetDirectoryName(_modelPath)!;
-                if (!Directory.Exists(modelsDir))
-                    Directory.CreateDirectory(modelsDir);
-
-                if (File.Exists(_modelPath))
+                if (IsModelInstalled())
                 {
-                    _isModelDownloaded = true;
+                    StatusChanged?.Invoke(this, "Whisper 模型已就绪");
                     return true;
                 }
 
-                await using var modelStream = await WhisperGgmlDownloader.Default.GetGgmlModelAsync(GgmlType.Tiny);
-                await using var fileStream = File.Create(_modelPath);
-                await modelStream.CopyToAsync(fileStream);
+                cancellationToken.ThrowIfCancellationRequested();
+                StatusChanged?.Invoke(this, "正在下载 Whisper Tiny 模型...");
 
-                _isModelDownloaded = true;
+                var modelsDir = Path.GetDirectoryName(_modelPath)!;
+                Directory.CreateDirectory(modelsDir);
+
+                await using var modelStream = await WhisperGgmlDownloader.Default
+                    .GetGgmlModelAsync(GgmlType.Tiny);
+                await using var fileStream = File.Create(_modelPath);
+                await modelStream.CopyToAsync(fileStream, cancellationToken);
+
                 StatusChanged?.Invoke(this, "Whisper 模型下载完成");
                 return true;
+            }
+            catch (OperationCanceledException)
+            {
+                if (File.Exists(_modelPath))
+                    File.Delete(_modelPath);
+                throw;
             }
             catch (Exception ex)
             {
@@ -96,7 +130,10 @@ namespace MouseClickVoice
             try
             {
                 if (!_isInitialized)
-                    await InitializeAsync();
+                {
+                    Error?.Invoke(this, new Exception("Whisper 引擎未初始化"));
+                    return null;
+                }
 
                 if (_processor == null || !File.Exists(wavFilePath))
                     return null;
@@ -127,7 +164,10 @@ namespace MouseClickVoice
                 return null;
 
             if (!_isInitialized)
-                await InitializeAsync();
+            {
+                Error?.Invoke(this, new Exception("Whisper 引擎未初始化"));
+                return null;
+            }
 
             var tempFile = Path.GetTempFileName() + ".wav";
             try

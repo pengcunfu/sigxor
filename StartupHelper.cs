@@ -22,7 +22,7 @@ namespace MouseClickVoice
             }
         }
 
-        public static void SetEnabled(bool enabled)
+        public static void SetEnabled(bool enabled, bool silentOnAutoStart = false)
         {
             using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true)
                 ?? Registry.CurrentUser.CreateSubKey(RunKeyPath, true);
@@ -33,7 +33,10 @@ namespace MouseClickVoice
                 if (string.IsNullOrEmpty(exePath))
                     exePath = Path.Combine(AppContext.BaseDirectory, "MouseClickVoice.exe");
 
-                key.SetValue(AppName, $"\"{exePath}\" --silent");
+                var command = silentOnAutoStart
+                    ? $"\"{exePath}\" --silent"
+                    : $"\"{exePath}\"";
+                key.SetValue(AppName, command);
             }
             else
             {

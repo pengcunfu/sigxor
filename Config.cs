@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -56,6 +57,14 @@ namespace MouseClickVoice
 
         [JsonPropertyName("showNotifications")]
         public bool ShowNotifications { get; set; } = true;
+
+        /// <summary>识别引擎是否在主界面下拉框中显示（key: sensevoice / whisper）</summary>
+        [JsonPropertyName("engineVisibility")]
+        public Dictionary<string, bool> EngineVisibility { get; set; } = new()
+        {
+            [SpeechModelManager.SenseVoiceId] = true,
+            [SpeechModelManager.WhisperId] = true
+        };
 
         // 调试设置
         [JsonPropertyName("debugMode")]
@@ -147,6 +156,11 @@ namespace MouseClickVoice
             MinimizeToTray = true;
             AutoStartWithWindows = false;
             ShowNotifications = true;
+            EngineVisibility = new Dictionary<string, bool>
+            {
+                [SpeechModelManager.SenseVoiceId] = true,
+                [SpeechModelManager.WhisperId] = true
+            };
             DebugMode = false;
             SaveAudioFiles = false;
         }

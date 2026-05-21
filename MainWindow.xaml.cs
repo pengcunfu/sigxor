@@ -1,5 +1,6 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -39,7 +40,9 @@ namespace MouseClickVoice
         public MainWindow()
         {
             _config = Config.Instance;
+            SpeechModelManager.EnsureDefaultVisibility();
             InitializeComponent(); // 这会自动调用InitializeComponents()
+            SpeechModelManager.ModelsChanged += OnModelsChanged;
             LoadUserSettings(); // 重命名避免冲突
             InitializeServices();
 
@@ -101,7 +104,18 @@ namespace MouseClickVoice
 
         private void AboutMenuItem_Click(object sender, RoutedEventArgs e) => ShowAboutDialog();
 
+        private void ModelManagementMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new ModelManagementWindow { Owner = IsVisible ? this : null };
+            window.ModelsUpdated += (_, _) => RefreshEngineComboBox();
+            window.ShowDialog();
+            RefreshEngineComboBox();
+        }
+
         private void ExitMenuItem_Click(object sender, RoutedEventArgs e) => ExitApplication();
+
+        private void OnModelsChanged() =>
+            Dispatcher.BeginInvoke(RefreshEngineComboBox);
 
         private void LoadUserSettings()
         {
@@ -114,7 +128,7 @@ namespace MouseClickVoice
                     _isLoadingSettings = true;
                     try
                     {
-                        SelectComboBoxByTag(EngineComboBox, _config.RecognitionEngine);
+                        RefreshEngineComboBox();
                         SelectComboBoxByTag(LanguageComboBox, _config.RecognitionLanguage);
 
                         if (ShowNotificationsCheckBox != null)
@@ -126,7 +140,7 @@ namespace MouseClickVoice
                             var autoStart = _config.AutoStartWithWindows;
                             if (autoStart != StartupHelper.IsEnabled())
                             {
-                                try { StartupHelper.SetEnabled(autoStart); }
+                                try { StartupHelper.SetEnabled(autoStart, _config.SilentStart); }
                                 catch { AutoStartCheckBox.IsChecked = StartupHelper.IsEnabled(); }
                             }
                             AutoStartCheckBox.IsChecked = StartupHelper.IsEnabled();
@@ -185,8 +199,21 @@ namespace MouseClickVoice
         {
             try
             {
-                var engineName = _config.RecognitionEngine.Equals("whisper", StringComparison.OrdinalIgnoreCase)
-                    ? "Whisper" : "SenseVoice";
+                var engineTag = _config.RecognitionEngine;
+                var model = SpeechModelManager.GetModel(engineTag);
+                var engineName = model?.DisplayName ?? engineTag;
+
+                if (!SpeechModelManager.IsInstalled(engineTag))
+                {
+                    MessageBox.Show(
+                        $"当前选择的「{engineName}」尚未下载。\n\n请在「工具 → 模型管理」中下载模型后再启动服务。",
+                        "模型未就绪",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    RecognitionStatusText.Text = "模型未下载";
+                    return;
+                }
+
                 RecognitionStatusText.Text = $"正在初始化 {engineName}...";
                 if (_speechRecognizer != null && !_speechRecognizer.IsInitialized)
                 {
@@ -195,10 +222,9 @@ namespace MouseClickVoice
                     {
                         MessageBox.Show(
                             $"{engineName} 初始化失败。\n\n" +
-                            "请检查：\n" +
-                            "1. 网络能否访问 GitHub\n" +
-                            "2. 删除程序目录下 models 文件夹后重试\n" +
-                            "3. 或手动下载模型解压到 models 目录",
+                            "请尝试：\n" +
+                            "1. 在「工具 → 模型管理」中删除并重新下载模型\n" +
+                            "2. 切换到其他已下载的识别引擎",
                             "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                         return;
                     }
@@ -423,8 +449,62 @@ namespace MouseClickVoice
                 if (item.Tag?.ToString() == tagValue)
                 {
                     comboBox.SelectedItem = item;
-                    break;
+                    return;
                 }
+            }
+        }
+
+        private void RefreshEngineComboBox()
+        {
+            if (EngineComboBox == null)
+                return;
+
+            _isLoadingSettings = true;
+            try
+            {
+                var selectable = SpeechModelManager.GetSelectableModels().ToList();
+                var savedEngine = _config.RecognitionEngine;
+
+                EngineComboBox.Items.Clear();
+
+                if (selectable.Count == 0)
+                {
+                    EngineComboBox.IsEnabled = false;
+                    EngineComboBox.Items.Add(new ComboBoxItem
+                    {
+                        Content = "请先下载模型",
+                        Tag = "",
+                        IsEnabled = false
+                    });
+                    EngineComboBox.SelectedIndex = 0;
+                    return;
+                }
+
+                EngineComboBox.IsEnabled = true;
+                foreach (var model in selectable)
+                {
+                    EngineComboBox.Items.Add(new ComboBoxItem
+                    {
+                        Content = model.DisplayName,
+                        Tag = model.EngineTag
+                    });
+                }
+
+                var target = selectable.FirstOrDefault(m =>
+                    m.EngineTag.Equals(savedEngine, StringComparison.OrdinalIgnoreCase));
+
+                if (target == null)
+                {
+                    target = selectable[0];
+                    _config.RecognitionEngine = target.EngineTag;
+                    _config.Save();
+                }
+
+                SelectComboBoxByTag(EngineComboBox, target.EngineTag);
+            }
+            finally
+            {
+                _isLoadingSettings = false;
             }
         }
 
@@ -435,23 +515,37 @@ namespace MouseClickVoice
 
             try
             {
-                if (EngineComboBox?.SelectedItem is ComboBoxItem item && item.Tag != null)
+                if (EngineComboBox?.SelectedItem is not ComboBoxItem item
+                    || string.IsNullOrEmpty(item.Tag?.ToString()))
+                    return;
+
+                var newEngine = item.Tag.ToString()!;
+                if (_config.RecognitionEngine == newEngine)
+                    return;
+
+                if (!SpeechModelManager.IsInstalled(newEngine))
                 {
-                    var newEngine = item.Tag.ToString()!;
-                    if (_config.RecognitionEngine == newEngine)
-                        return;
-
-                    _config.RecognitionEngine = newEngine;
-                    _config.Save();
-
-                    // 切换引擎后需重新初始化
-                    _speechRecognizer?.Dispose();
-                    _speechRecognizer = new SpeechRecognizer();
-                    _speechRecognizer.StatusChanged += OnRecognitionStatusChanged;
-                    _speechRecognizer.Error += OnSpeechError;
-
-                    RecognitionStatusText.Text = "引擎已切换，请重新启动服务";
+                    MessageBox.Show(
+                        "该引擎尚未下载，请先在「工具 → 模型管理」中下载。",
+                        "无法切换",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    RefreshEngineComboBox();
+                    return;
                 }
+
+                _config.RecognitionEngine = newEngine;
+                _config.Save();
+
+                if (_serviceRunning)
+                    StopService();
+
+                _speechRecognizer?.Dispose();
+                _speechRecognizer = new SpeechRecognizer();
+                _speechRecognizer.StatusChanged += OnRecognitionStatusChanged;
+                _speechRecognizer.Error += OnSpeechError;
+
+                RecognitionStatusText.Text = "引擎已切换，请重新启动服务";
             }
             catch (Exception ex)
             {
@@ -515,6 +609,19 @@ namespace MouseClickVoice
 
             _config.SilentStart = SilentStartCheckBox.IsChecked == true;
             _config.Save();
+
+            if (StartupHelper.IsEnabled())
+            {
+                try
+                {
+                    StartupHelper.SetEnabled(true, _config.SilentStart);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"更新开机自启动参数失败: {ex.Message}", "错误",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
         }
 
         private void MinimizeToTrayCheckBox_Changed(object sender, RoutedEventArgs e)
@@ -534,7 +641,7 @@ namespace MouseClickVoice
             try
             {
                 var enabled = AutoStartCheckBox.IsChecked == true;
-                StartupHelper.SetEnabled(enabled);
+                StartupHelper.SetEnabled(enabled, _config.SilentStart);
                 _config.AutoStartWithWindows = enabled;
                 _config.Save();
             }
@@ -575,6 +682,7 @@ namespace MouseClickVoice
                 _voiceOverlay = null;
                 _trayIcon?.Dispose();
                 _trayIcon = null;
+                SpeechModelManager.ModelsChanged -= OnModelsChanged;
             }
             catch (Exception ex)
             {
