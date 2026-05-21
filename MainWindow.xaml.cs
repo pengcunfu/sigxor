@@ -27,6 +27,7 @@ namespace MouseClickVoice
         private TrayIconManager? _trayIcon;
         private bool _serviceRunning;
         private bool _isExiting;
+        private bool _isLoadingSettings;
         private bool _isRecording;
         private bool _isShortcutDown;
         private bool _altHoldTriggeredThisPress;
@@ -110,6 +111,7 @@ namespace MouseClickVoice
                 // 延迟设置以确保UI组件已完全初始化
                 Dispatcher.BeginInvoke(() =>
                 {
+                    _isLoadingSettings = true;
                     try
                     {
                         SelectComboBoxByTag(EngineComboBox, _config.RecognitionEngine);
@@ -135,6 +137,10 @@ namespace MouseClickVoice
                     catch (Exception ex)
                     {
                         System.Diagnostics.Debug.WriteLine($"加载设置失败: {ex.Message}");
+                    }
+                    finally
+                    {
+                        _isLoadingSettings = false;
                     }
                 });
             }
@@ -424,6 +430,9 @@ namespace MouseClickVoice
 
         private void EngineComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_isLoadingSettings)
+                return;
+
             try
             {
                 if (EngineComboBox?.SelectedItem is ComboBoxItem item && item.Tag != null)
@@ -452,11 +461,18 @@ namespace MouseClickVoice
 
         private void LanguageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_isLoadingSettings)
+                return;
+
             try
             {
                 if (LanguageComboBox?.SelectedItem is ComboBoxItem item && item.Tag != null)
                 {
-                    _config.RecognitionLanguage = item.Tag.ToString()!;
+                    var newLanguage = item.Tag.ToString()!;
+                    if (_config.RecognitionLanguage == newLanguage)
+                        return;
+
+                    _config.RecognitionLanguage = newLanguage;
                     _config.Save();
                 }
             }
@@ -468,12 +484,18 @@ namespace MouseClickVoice
 
         private void ShowNotificationsCheckBox_Changed(object sender, RoutedEventArgs e)
         {
+            if (_isLoadingSettings)
+                return;
+
             _config.ShowNotifications = ShowNotificationsCheckBox.IsChecked == true;
             _config.Save();
         }
 
         private void UseClipboardCheckBox_Changed(object sender, RoutedEventArgs e)
         {
+            if (_isLoadingSettings)
+                return;
+
             _config.UseClipboard = UseClipboardCheckBox.IsChecked == true;
             _config.Save();
         }
@@ -488,7 +510,7 @@ namespace MouseClickVoice
 
         private void SilentStartCheckBox_Changed(object sender, RoutedEventArgs e)
         {
-            if (SilentStartCheckBox == null)
+            if (_isLoadingSettings || SilentStartCheckBox == null)
                 return;
 
             _config.SilentStart = SilentStartCheckBox.IsChecked == true;
@@ -497,7 +519,7 @@ namespace MouseClickVoice
 
         private void MinimizeToTrayCheckBox_Changed(object sender, RoutedEventArgs e)
         {
-            if (MinimizeToTrayCheckBox == null)
+            if (_isLoadingSettings || MinimizeToTrayCheckBox == null)
                 return;
 
             _config.MinimizeToTray = MinimizeToTrayCheckBox.IsChecked == true;
@@ -506,7 +528,7 @@ namespace MouseClickVoice
 
         private void AutoStartCheckBox_Changed(object sender, RoutedEventArgs e)
         {
-            if (AutoStartCheckBox == null)
+            if (_isLoadingSettings || AutoStartCheckBox == null)
                 return;
 
             try

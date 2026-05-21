@@ -64,6 +64,15 @@ namespace MouseClickVoice
         [JsonPropertyName("saveAudioFiles")]
         public bool SaveAudioFiles { get; set; } = false;
 
+        private static readonly JsonSerializerOptions JsonOptions = new()
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            PropertyNameCaseInsensitive = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true
+        };
+
         private static Config? _instance;
         public static Config Instance
         {
@@ -74,7 +83,7 @@ namespace MouseClickVoice
             }
         }
 
-        private Config()
+        public Config()
         {
         }
 
@@ -85,8 +94,12 @@ namespace MouseClickVoice
                 if (File.Exists(ConfigPath))
                 {
                     var json = File.ReadAllText(ConfigPath);
-                    var config = JsonSerializer.Deserialize<Config>(json);
-                    return config ?? new Config();
+                    var config = JsonSerializer.Deserialize<Config>(json, JsonOptions);
+                    if (config != null)
+                    {
+                        _instance = config;
+                        return config;
+                    }
                 }
             }
             catch (Exception ex)
@@ -94,7 +107,9 @@ namespace MouseClickVoice
                 System.Diagnostics.Debug.WriteLine($"加载配置文件失败: {ex.Message}");
             }
 
-            return new Config();
+            var defaults = new Config();
+            _instance = defaults;
+            return defaults;
         }
 
         public void Save()
@@ -107,11 +122,7 @@ namespace MouseClickVoice
                     Directory.CreateDirectory(directory);
                 }
 
-                var json = JsonSerializer.Serialize(this, new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                });
+                var json = JsonSerializer.Serialize(this, JsonOptions);
 
                 File.WriteAllText(ConfigPath, json);
             }
