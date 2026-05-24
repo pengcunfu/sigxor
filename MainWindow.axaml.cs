@@ -1,0 +1,683 @@
+using System;
+using System.ComponentModel;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
+
+namespace MouseClickVoice;
+
+public partial class MainWindow : Window
+{
+    private enum RecordingTrigger { None, KeyboardHold, KeyboardToggle }
+
+    private IKeyboardHookService? _keyboardHook;
+    private AudioCapture? _audioCapture;
+    private SpeechRecognizer? _speechRecognizer;
+    private TextSimulator? _textSimulator;
+    private VoiceInputOverlay? _voiceOverlay;
+    private TrayIconManager? _trayIcon;
+    private bool _serviceRunning;
+    private bool _isExiting;
+    private bool _isLoadingSettings;
+    private bool _isRecording;
+    private bool _isShortcutDown;
+    private bool _altHoldTriggeredThisPress;
+    private bool _keyboardToggleActive;
+    private RecordingTrigger _activeTrigger = RecordingTrigger.None;
+    private readonly DispatcherTimer _statusTimer;
+    private readonly Config _config;
+
+    public MainWindow()
+    {
+        _config = Config.Instance;
+        SpeechModelManager.EnsureDefaultVisibility();
+        InitializeComponent();
+        SpeechModelManager.ModelsChanged += OnModelsChanged;
+        LoadUserSettings();
+        InitializeServices();
+
+        _statusTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(0.1)
+        };
+        _statusTimer.Tick += UpdateStatus;
+        _statusTimer.Start();
+
+        Opened += OnWindowOpened;
+        Closing += OnClosing;
+    }
+
+    public void PrepareSilentStartup()
+    {
+        Hide();
+        ShowInTaskbar = false;
+    }
+
+    private async void OnWindowOpened(object? sender, EventArgs e)
+    {
+        Opened -= OnWindowOpened;
+        await StartService();
+    }
+
+    private void ShowMainWindow()
+    {
+        Show();
+        ShowInTaskbar = true;
+        WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    private async void ShowAboutDialog()
+    {
+        var about = new AboutWindow();
+        await about.ShowDialog(this);
+    }
+
+    private void ExitApplication()
+    {
+        _isExiting = true;
+        StopService();
+        _trayIcon?.Dispose();
+        _trayIcon = null;
+
+        if (Avalonia.Application.Current?.ApplicationLifetime
+            is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            desktop.Shutdown();
+        }
+    }
+
+    private void UpdateServiceMenuState()
+    {
+        StartServiceMenuItem.IsEnabled = !_serviceRunning;
+        StopServiceMenuItem.IsEnabled = _serviceRunning;
+        _trayIcon?.SetServiceRunning(_serviceRunning);
+    }
+
+    private async void StartServiceMenuItem_Click(object? sender, RoutedEventArgs e) => await StartService();
+
+    private void StopServiceMenuItem_Click(object? sender, RoutedEventArgs e) => StopService();
+
+    private void AboutMenuItem_Click(object? sender, RoutedEventArgs e) => ShowAboutDialog();
+
+    private async void ModelManagementMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        var window = new ModelManagementWindow();
+        window.ModelsUpdated += (_, _) => RefreshEngineComboBox();
+        await window.ShowDialog(this);
+        RefreshEngineComboBox();
+    }
+
+    private void ExitMenuItem_Click(object? sender, RoutedEventArgs e) => ExitApplication();
+
+    private void OnModelsChanged() =>
+        Dispatcher.UIThread.Post(RefreshEngineComboBox);
+
+    private void LoadUserSettings()
+    {
+        if (_config != null)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                _isLoadingSettings = true;
+                try
+                {
+                    RefreshEngineComboBox();
+                    SelectComboBoxByTag(LanguageComboBox, _config.RecognitionLanguage);
+
+                    ShowNotificationsCheckBox.IsChecked = _config.ShowNotifications;
+                    UseClipboardCheckBox.IsChecked = _config.UseClipboard;
+                    SilentStartCheckBox.IsChecked = _config.SilentStart;
+                    MinimizeToTrayCheckBox.IsChecked = _config.MinimizeToTray;
+
+                    var autoStart = _config.AutoStartWithWindows;
+                    if (autoStart != StartupHelper.IsEnabled())
+                    {
+                        try { StartupHelper.SetEnabled(autoStart, _config.SilentStart); }
+                        catch { AutoStartCheckBox.IsChecked = StartupHelper.IsEnabled(); }
+                    }
+
+                    AutoStartCheckBox.IsChecked = StartupHelper.IsEnabled();
+                    UpdateServiceMenuState();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"加载设置失败: {ex.Message}");
+                }
+                finally
+                {
+                    _isLoadingSettings = false;
+                }
+            });
+        }
+    }
+
+    private void InitializeServices()
+    {
+        try
+        {
+            _keyboardHook = PlatformServices.CreateKeyboardHook();
+            _keyboardHook.HoldThresholdMs = (int)(_config.AltHoldThreshold * 1000);
+            _keyboardHook.ShortcutPressed += OnShortcutPressed;
+            _keyboardHook.ShortcutReleased += OnShortcutReleased;
+            _keyboardHook.ShortcutHoldDetected += OnShortcutHoldDetected;
+
+            _audioCapture = new AudioCapture();
+            _audioCapture.StatusChanged += OnAudioStatusChanged;
+
+            _speechRecognizer = new SpeechRecognizer();
+            _speechRecognizer.StatusChanged += OnRecognitionStatusChanged;
+            _speechRecognizer.Error += OnSpeechError;
+
+            _textSimulator = new TextSimulator(_config.TypingDelay);
+            _textSimulator.SetOwnerWindow(this);
+            _voiceOverlay = new VoiceInputOverlay();
+
+            _trayIcon = new TrayIconManager();
+            _trayIcon.ShowWindowRequested += (_, _) => ShowMainWindow();
+            _trayIcon.StartServiceRequested += async (_, _) => await StartService();
+            _trayIcon.StopServiceRequested += (_, _) => StopService();
+            _trayIcon.AboutRequested += (_, _) => ShowAboutDialog();
+            _trayIcon.ExitRequested += (_, _) => ExitApplication();
+
+            RecognitionStatusText.Text = _keyboardHook.IsSupported
+                ? "已初始化"
+                : "已初始化（快捷键仅 Windows 可用）";
+        }
+        catch (Exception ex)
+        {
+            _ = DialogHelper.ShowErrorAsync(this, $"初始化服务失败: {ex.Message}");
+        }
+    }
+
+    private async Task StartService()
+    {
+        try
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                await DialogHelper.ShowWarningAsync(this,
+                    "当前平台下全局快捷键与音频录制功能受限。\nWindows 上可获得完整体验。",
+                    "平台提示");
+            }
+
+            var engineTag = _config.RecognitionEngine;
+            var model = SpeechModelManager.GetModel(engineTag);
+            var engineName = model?.DisplayName ?? engineTag;
+
+            if (!SpeechModelManager.IsInstalled(engineTag))
+            {
+                await DialogHelper.ShowWarningAsync(this,
+                    $"当前选择的「{engineName}」尚未下载。\n\n请在「模型管理」中下载模型后再启动服务。",
+                    "模型未就绪");
+                RecognitionStatusText.Text = "模型未下载";
+                return;
+            }
+
+            RecognitionStatusText.Text = $"正在初始化 {engineName}...";
+            if (_speechRecognizer != null && !_speechRecognizer.IsInitialized)
+            {
+                var initSuccess = await _speechRecognizer.InitializeAsync();
+                if (!initSuccess)
+                {
+                    await DialogHelper.ShowErrorAsync(this,
+                        $"{engineName} 初始化失败。\n\n" +
+                        "请尝试：\n" +
+                        "1. 在「模型管理」中删除并重新下载模型\n" +
+                        "2. 切换到其他已下载的识别引擎");
+                    return;
+                }
+            }
+
+            if (_keyboardHook?.IsSupported == true)
+            {
+                _keyboardHook.Start();
+                await Task.Delay(100);
+            }
+
+            _serviceRunning = true;
+            UpdateServiceMenuState();
+
+            ShowNotification("服务已启动", "使用右 Alt 键进行语音输入");
+            RecognitionStatusText.Text = $"{_speechRecognizer?.EngineName ?? engineName} 就绪";
+        }
+        catch (Exception ex)
+        {
+            await DialogHelper.ShowErrorAsync(this, $"启动服务失败: {ex.Message}");
+        }
+    }
+
+    private void StopService()
+    {
+        try
+        {
+            _keyboardHook?.Stop();
+            _audioCapture?.StopRecording();
+
+            _isRecording = false;
+            _isShortcutDown = false;
+            _altHoldTriggeredThisPress = false;
+            _keyboardToggleActive = false;
+            _activeTrigger = RecordingTrigger.None;
+            _voiceOverlay?.HideOverlay();
+
+            _serviceRunning = false;
+            UpdateServiceMenuState();
+
+            ShowNotification("服务已停止", "语音输入功能已关闭");
+        }
+        catch (Exception ex)
+        {
+            _ = DialogHelper.ShowErrorAsync(this, $"停止服务失败: {ex.Message}");
+        }
+    }
+
+    private void RunOnUiThread(Action action)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+            action();
+        else
+            Dispatcher.UIThread.Post(action);
+    }
+
+    private void OnShortcutPressed(object? sender, EventArgs e)
+    {
+        RunOnUiThread(() =>
+        {
+            _isShortcutDown = true;
+            _altHoldTriggeredThisPress = false;
+            ShortcutStatusText.Text = _keyboardToggleActive ? "录音中" : "按下";
+        });
+    }
+
+    private void OnShortcutHoldDetected(object? sender, EventArgs e)
+    {
+        RunOnUiThread(() =>
+        {
+            if (!_isShortcutDown || _isRecording)
+                return;
+
+            _altHoldTriggeredThisPress = true;
+            ShortcutStatusText.Text = "长按录音";
+            StartRecording(RecordingTrigger.KeyboardHold);
+        });
+    }
+
+    private void OnShortcutReleased(object? sender, EventArgs e)
+    {
+        RunOnUiThread(() =>
+        {
+            _isShortcutDown = false;
+
+            if (_altHoldTriggeredThisPress)
+            {
+                ShortcutStatusText.Text = "释放";
+                if (_isRecording && _activeTrigger == RecordingTrigger.KeyboardHold)
+                    StopRecording();
+                return;
+            }
+
+            if (_keyboardToggleActive)
+            {
+                ShortcutStatusText.Text = "结束";
+                StopRecording();
+            }
+            else if (!_isRecording)
+            {
+                ShortcutStatusText.Text = "录音中(再按结束)";
+                StartRecording(RecordingTrigger.KeyboardToggle);
+                _keyboardToggleActive = true;
+            }
+        });
+    }
+
+    private void StartRecording(RecordingTrigger trigger)
+    {
+        try
+        {
+            if (!OperatingSystem.IsWindows())
+                throw new PlatformNotSupportedException("音频录制当前仅支持 Windows。");
+
+            _activeTrigger = trigger;
+            _isRecording = true;
+            _audioCapture?.StartRecording(_config.SampleRate, _config.Channels, _config.BitDepth);
+            _voiceOverlay?.ShowRecording();
+        }
+        catch (Exception ex)
+        {
+            ShowNotification("录音启动失败", ex.Message);
+            _isRecording = false;
+            _activeTrigger = RecordingTrigger.None;
+            _voiceOverlay?.HideOverlay();
+        }
+    }
+
+    private async void StopRecording()
+    {
+        if (!_isRecording)
+            return;
+
+        try
+        {
+            _isRecording = false;
+            _activeTrigger = RecordingTrigger.None;
+            _keyboardToggleActive = false;
+            _audioCapture?.StopRecording();
+            _voiceOverlay?.ShowProcessing();
+
+            var audioData = _audioCapture?.GetCompleteAudio();
+            if (audioData != null && _speechRecognizer != null)
+            {
+                RecognitionStatusText.Text = "正在识别...";
+                var result = await _speechRecognizer.RecognizeFromBufferAsync(audioData, _config.SampleRate);
+                if (!string.IsNullOrEmpty(result))
+                    await OnTextRecognizedAsync(result);
+            }
+
+            _voiceOverlay?.HideOverlay();
+        }
+        catch (Exception ex)
+        {
+            _voiceOverlay?.HideOverlay();
+            ShowNotification("录音停止失败", ex.Message);
+        }
+    }
+
+    private async Task OnTextRecognizedAsync(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            LastRecognizedText.Text = text;
+        });
+
+        try
+        {
+            if (_config.UseClipboard)
+                await _textSimulator!.InsertTextAsync(text);
+            else
+                await _textSimulator!.TypeTextAsync(text);
+
+            ShowNotification("文字输入完成", text);
+        }
+        catch (Exception ex)
+        {
+            ShowNotification("文字输入失败", ex.Message);
+        }
+    }
+
+    private void OnAudioStatusChanged(object? sender, string status) =>
+        Dispatcher.UIThread.Post(() => RecordingStatusText.Text = status);
+
+    private void OnRecognitionStatusChanged(object? sender, string status) =>
+        Dispatcher.UIThread.Post(() => RecognitionStatusText.Text = status);
+
+    private void OnSpeechError(object? sender, Exception error) =>
+        Dispatcher.UIThread.Post(() => ShowNotification("语音识别错误", error.Message));
+
+    private void UpdateStatus(object? sender, EventArgs e)
+    {
+        if (!_isShortcutDown && ShortcutStatusText.Text != "等待中...")
+            ShortcutStatusText.Text = "等待中...";
+    }
+
+    private static void SelectComboBoxByTag(ComboBox? comboBox, string tagValue)
+    {
+        if (comboBox == null)
+            return;
+
+        foreach (var item in comboBox.Items)
+        {
+            if (item is ComboBoxItem comboItem && comboItem.Tag?.ToString() == tagValue)
+            {
+                comboBox.SelectedItem = item;
+                return;
+            }
+        }
+    }
+
+    private void RefreshEngineComboBox()
+    {
+        if (EngineComboBox == null)
+            return;
+
+        _isLoadingSettings = true;
+        try
+        {
+            var selectable = SpeechModelManager.GetSelectableModels().ToList();
+            var savedEngine = _config.RecognitionEngine;
+
+            EngineComboBox.Items.Clear();
+
+            if (selectable.Count == 0)
+            {
+                EngineComboBox.IsEnabled = false;
+                EngineComboBox.Items.Add(new ComboBoxItem
+                {
+                    Content = "请先下载模型",
+                    Tag = "",
+                    IsEnabled = false
+                });
+                EngineComboBox.SelectedIndex = 0;
+                return;
+            }
+
+            EngineComboBox.IsEnabled = true;
+            foreach (var model in selectable)
+            {
+                EngineComboBox.Items.Add(new ComboBoxItem
+                {
+                    Content = model.DisplayName,
+                    Tag = model.EngineTag
+                });
+            }
+
+            var target = selectable.FirstOrDefault(m =>
+                m.EngineTag.Equals(savedEngine, StringComparison.OrdinalIgnoreCase));
+
+            if (target == null)
+            {
+                target = selectable[0];
+                _config.RecognitionEngine = target.EngineTag;
+                _config.Save();
+            }
+
+            SelectComboBoxByTag(EngineComboBox, target.EngineTag);
+        }
+        finally
+        {
+            _isLoadingSettings = false;
+        }
+    }
+
+    private async void EngineComboBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_isLoadingSettings)
+            return;
+
+        try
+        {
+            if (EngineComboBox?.SelectedItem is not ComboBoxItem item
+                || string.IsNullOrEmpty(item.Tag?.ToString()))
+                return;
+
+            var newEngine = item.Tag.ToString()!;
+            if (_config.RecognitionEngine == newEngine)
+                return;
+
+            if (!SpeechModelManager.IsInstalled(newEngine))
+            {
+                await DialogHelper.ShowInfoAsync(this,
+                    "该引擎尚未下载，请先在「模型管理」中下载。",
+                    "无法切换");
+                RefreshEngineComboBox();
+                return;
+            }
+
+            _config.RecognitionEngine = newEngine;
+            _config.Save();
+
+            if (_serviceRunning)
+                StopService();
+
+            _speechRecognizer?.Dispose();
+            _speechRecognizer = new SpeechRecognizer();
+            _speechRecognizer.StatusChanged += OnRecognitionStatusChanged;
+            _speechRecognizer.Error += OnSpeechError;
+
+            RecognitionStatusText.Text = "引擎已切换，请重新启动服务";
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"引擎选择错误: {ex.Message}");
+        }
+    }
+
+    private void LanguageComboBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_isLoadingSettings)
+            return;
+
+        try
+        {
+            if (LanguageComboBox?.SelectedItem is ComboBoxItem item && item.Tag != null)
+            {
+                var newLanguage = item.Tag.ToString()!;
+                if (_config.RecognitionLanguage == newLanguage)
+                    return;
+
+                _config.RecognitionLanguage = newLanguage;
+                _config.Save();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"语言选择错误: {ex.Message}");
+        }
+    }
+
+    private void ShowNotificationsCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_isLoadingSettings)
+            return;
+
+        _config.ShowNotifications = ShowNotificationsCheckBox.IsChecked == true;
+        _config.Save();
+    }
+
+    private void UseClipboardCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_isLoadingSettings)
+            return;
+
+        _config.UseClipboard = UseClipboardCheckBox.IsChecked == true;
+        _config.Save();
+    }
+
+    private void ShowNotification(string title, string message)
+    {
+        if (_config.ShowNotifications)
+            _trayIcon?.ShowBalloon(title, message);
+
+        System.Diagnostics.Debug.WriteLine($"{title}: {message}");
+    }
+
+    private async void SilentStartCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_isLoadingSettings || SilentStartCheckBox == null)
+            return;
+
+        _config.SilentStart = SilentStartCheckBox.IsChecked == true;
+        _config.Save();
+
+        if (StartupHelper.IsEnabled())
+        {
+            try
+            {
+                StartupHelper.SetEnabled(true, _config.SilentStart);
+            }
+            catch (Exception ex)
+            {
+                await DialogHelper.ShowWarningAsync(this, $"更新开机自启动参数失败: {ex.Message}");
+            }
+        }
+    }
+
+    private void MinimizeToTrayCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_isLoadingSettings || MinimizeToTrayCheckBox == null)
+            return;
+
+        _config.MinimizeToTray = MinimizeToTrayCheckBox.IsChecked == true;
+        _config.Save();
+    }
+
+    private async void AutoStartCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_isLoadingSettings || AutoStartCheckBox == null)
+            return;
+
+        try
+        {
+            var enabled = AutoStartCheckBox.IsChecked == true;
+            StartupHelper.SetEnabled(enabled, _config.SilentStart);
+            _config.AutoStartWithWindows = enabled;
+            _config.Save();
+        }
+        catch (Exception ex)
+        {
+            AutoStartCheckBox.IsChecked = StartupHelper.IsEnabled();
+            await DialogHelper.ShowWarningAsync(this, $"设置开机自启动失败: {ex.Message}");
+        }
+    }
+
+    private void OnClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (!_isExiting && _config.MinimizeToTray)
+        {
+            e.Cancel = true;
+            Hide();
+            ShowInTaskbar = false;
+            ShowNotification("语音输入", "程序已最小化到托盘");
+        }
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        try
+        {
+            if (!_isExiting)
+                StopService();
+
+            _statusTimer?.Stop();
+            _keyboardHook?.Dispose();
+            _audioCapture?.Dispose();
+            _speechRecognizer?.Dispose();
+            _voiceOverlay?.Close();
+            _voiceOverlay = null;
+            _trayIcon?.Dispose();
+            _trayIcon = null;
+            SpeechModelManager.ModelsChanged -= OnModelsChanged;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"清理资源时出错: {ex.Message}");
+        }
+
+        base.OnClosed(e);
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && IsVisible)
+            Hide();
+        base.OnKeyDown(e);
+    }
+}

@@ -1,13 +1,9 @@
-﻿<Window x:Class="MouseClickVoice.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:MouseClickVoice"
-        mc:Ignorable="d"
+        x:Class="MouseClickVoice.MainWindow"
         Title="语音输入" Height="480" Width="400"
         WindowStartupLocation="CenterScreen"
-        Icon="icon.png">
+        Icon="/icon.png">
     <DockPanel>
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="服务(_S)">
@@ -29,8 +25,9 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <GroupBox Grid.Row="0" Header="状态" Margin="0,0,0,10">
+            <Border Grid.Row="0" BorderBrush="#CCC" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,10">
                 <StackPanel>
+                    <TextBlock Text="状态" FontWeight="SemiBold" Margin="0,0,0,8"/>
                     <StackPanel Orientation="Horizontal" Margin="5">
                         <TextBlock Text="快捷键:" Width="80"/>
                         <TextBlock x:Name="ShortcutStatusText" Text="等待中..." Foreground="Gray"/>
@@ -48,17 +45,18 @@
                         <TextBlock x:Name="LastRecognizedText" Text="无" TextWrapping="Wrap"/>
                     </StackPanel>
                 </StackPanel>
-            </GroupBox>
+            </Border>
 
-            <GroupBox Grid.Row="1" Header="设置" Margin="0,0,0,10">
+            <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,10">
                 <StackPanel>
+                    <TextBlock Text="设置" FontWeight="SemiBold" Margin="0,0,0,8"/>
                     <StackPanel Orientation="Horizontal" Margin="5">
-                        <TextBlock Text="识别引擎:" Width="80"/>
+                        <TextBlock Text="识别引擎:" Width="80" VerticalAlignment="Center"/>
                         <ComboBox x:Name="EngineComboBox" Width="150"
                                   SelectionChanged="EngineComboBox_SelectionChanged"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="5">
-                        <TextBlock Text="识别语言:" Width="80"/>
+                        <TextBlock Text="识别语言:" Width="80" VerticalAlignment="Center"/>
                         <ComboBox x:Name="LanguageComboBox" Width="150" SelectionChanged="LanguageComboBox_SelectionChanged">
                             <ComboBoxItem Content="中文" Tag="zh-CN" IsSelected="True"/>
                             <ComboBoxItem Content="English" Tag="en-US"/>
@@ -84,7 +82,7 @@
                               Margin="5" Checked="AutoStartCheckBox_Changed"
                               Unchecked="AutoStartCheckBox_Changed"/>
                 </StackPanel>
-            </GroupBox>
+            </Border>
 
             <TextBlock Grid.Row="2" Text="使用说明：右 Alt 短按开始/再按结束（长录音），或按住右 Alt 松手结束（短句）"
                        HorizontalAlignment="Center" FontSize="12" Foreground="Gray"

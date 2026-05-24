@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace MouseClickVoice
 {
-    public class KeyboardHook : IDisposable
+    public class KeyboardHook : IKeyboardHookService
     {
         private const int WhKeyboardLl = 13;
         private const int WmKeydown = 0x0100;
@@ -23,6 +23,8 @@ namespace MouseClickVoice
 
         /// <summary>按住超过该时长视为「长按模式」，否则为「点击切换」</summary>
         public int HoldThresholdMs { get; set; } = 400;
+
+        public bool IsSupported => true;
 
         public event EventHandler? ShortcutPressed;
         public event EventHandler? ShortcutReleased;
