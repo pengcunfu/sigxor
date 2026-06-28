@@ -103,6 +103,9 @@
                         · 短按：开始/结束长录音<LineBreak/>
                         · 按住：松手结束短句录音
                     </TextBlock>
+                    <HyperlinkButton Content="官方文档"
+                                     NavigateUri="https://my.feishu.cn/wiki/EyJswQiaBiaOlzkguzPc52mAn8b?from=from_copylink"
+                                     HorizontalAlignment="Left"/>
                     <HyperlinkButton Content="https://github.com/pengcunfu/sigxor"
                                      NavigateUri="https://github.com/pengcunfu/sigxor"
                                      HorizontalAlignment="Left"/>

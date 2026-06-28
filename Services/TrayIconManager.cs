@@ -8,29 +8,17 @@ namespace MouseClickVoice;
 public class TrayIconManager : IDisposable
 {
     private readonly TrayIcon _trayIcon;
-    private readonly NativeMenuItem _startItem;
-    private readonly NativeMenuItem _stopItem;
 
     public event EventHandler? ShowWindowRequested;
-    public event EventHandler? StartServiceRequested;
-    public event EventHandler? StopServiceRequested;
-    public event EventHandler? AboutRequested;
     public event EventHandler? ExitRequested;
 
     public TrayIconManager()
     {
-        _startItem = CreateMenuItem("开始服务", (_, _) => StartServiceRequested?.Invoke(this, EventArgs.Empty));
-        _stopItem = CreateMenuItem("停止服务", (_, _) => StopServiceRequested?.Invoke(this, EventArgs.Empty));
-
         var menu = new NativeMenu
         {
             Items =
             {
                 CreateMenuItem("显示主窗口", (_, _) => ShowWindowRequested?.Invoke(this, EventArgs.Empty)),
-                _startItem,
-                _stopItem,
-                new NativeMenuItemSeparator(),
-                CreateMenuItem("关于", (_, _) => AboutRequested?.Invoke(this, EventArgs.Empty)),
                 CreateMenuItem("退出", (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty))
             }
         };
@@ -55,8 +43,6 @@ public class TrayIconManager : IDisposable
 
     public void SetServiceRunning(bool running)
     {
-        _startItem.IsEnabled = !running;
-        _stopItem.IsEnabled = running;
         _trayIcon.ToolTipText = running ? "语音输入 - 服务运行中" : "语音输入 - 服务已停止";
     }
 

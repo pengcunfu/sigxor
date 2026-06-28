@@ -43,7 +43,7 @@ namespace MouseClickVoice
         public double TypingDelay { get; set; } = 0.05;
 
         [JsonPropertyName("useClipboard")]
-        public bool UseClipboard { get; set; } = false;
+        public bool UseClipboard { get; set; } = true;
 
         // 应用程序设置
         [JsonPropertyName("silentStart")]
@@ -150,7 +150,7 @@ namespace MouseClickVoice
             RecognitionLanguage = "zh-CN";
             ConfidenceThreshold = 0.6;
             TypingDelay = 0.05;
-            UseClipboard = false;
+            UseClipboard = true;
             SilentStart = false;
             MinimizeToTray = true;
             AutoStartWithWindows = false;

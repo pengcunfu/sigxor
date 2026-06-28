@@ -7,6 +7,8 @@
         TransparencyLevelHint="Transparent"
         ShowInTaskbar="False"
         Topmost="True"
+        ShowActivated="False"
+        Focusable="False"
         CanResize="False"
         SizeToContent="WidthAndHeight">
     <Border x:Name="CapsuleBorder"

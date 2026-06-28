@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -26,6 +27,7 @@ public partial class MainWindow : Window
     private VoiceInputOverlay? _voiceOverlay;
     private TrayIconManager? _trayIcon;
     private bool _serviceRunning;
+    private bool _isStartingService;
     private bool _isExiting;
     private bool _isLoadingSettings;
     private bool _isRecording;
@@ -67,11 +69,48 @@ public partial class MainWindow : Window
         ShowInTaskbar = false;
     }
 
-    private async void OnWindowOpened(object? sender, EventArgs e)
+    private void OnWindowOpened(object? sender, EventArgs e)
     {
         Opened -= OnWindowOpened;
-        await StartService();
+        DisableMinMaxButtonsForWindow();
+        _ = StartService();
     }
+
+    private void DisableMinMaxButtonsForWindow()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var handle = TryGetPlatformHandle()?.Handle ?? nint.Zero;
+        if (handle == nint.Zero)
+            return;
+
+        const int gwlStyle = -16;
+        const nint wsMinimizeBox = 0x00020000;
+        const nint wsMaximizeBox = 0x00010000;
+
+        var style = GetWindowLongPtr(handle, gwlStyle);
+        style &= ~wsMinimizeBox;
+        style &= ~wsMaximizeBox;
+        SetWindowLongPtr(handle, gwlStyle, style);
+
+        const uint swpNomove = 0x0002;
+        const uint swpNosize = 0x0001;
+        const uint swpNozorder = 0x0004;
+        const uint swpFrameChanged = 0x0020;
+        SetWindowPos(handle, nint.Zero, 0, 0, 0, 0,
+            swpNomove | swpNosize | swpNozorder | swpFrameChanged);
+    }
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")]
+    private static extern nint GetWindowLongPtr(nint hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")]
+    private static extern nint SetWindowLongPtr(nint hWnd, int nIndex, nint dwNewLong);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(
+        nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
 
     private void ShowMainWindow()
     {
@@ -79,12 +118,6 @@ public partial class MainWindow : Window
         ShowInTaskbar = true;
         WindowState = WindowState.Normal;
         Activate();
-    }
-
-    private void ShowAboutTab()
-    {
-        ShowMainWindow();
-        MainTabControl.SelectedItem = AboutTabItem;
     }
 
     private void ExitApplication()
@@ -103,7 +136,7 @@ public partial class MainWindow : Window
 
     private void UpdateServiceButtonState()
     {
-        StartServiceButton.IsEnabled = !_serviceRunning;
+        StartServiceButton.IsEnabled = !_serviceRunning && !_isStartingService;
         StopServiceButton.IsEnabled = _serviceRunning;
         _trayIcon?.SetServiceRunning(_serviceRunning);
     }
@@ -181,9 +214,6 @@ public partial class MainWindow : Window
 
             _trayIcon = new TrayIconManager();
             _trayIcon.ShowWindowRequested += (_, _) => ShowMainWindow();
-            _trayIcon.StartServiceRequested += async (_, _) => await StartService();
-            _trayIcon.StopServiceRequested += (_, _) => StopService();
-            _trayIcon.AboutRequested += (_, _) => ShowAboutTab();
             _trayIcon.ExitRequested += (_, _) => ExitApplication();
 
             RecognitionStatusText.Text = _keyboardHook.IsSupported
@@ -198,6 +228,13 @@ public partial class MainWindow : Window
 
     private async Task StartService()
     {
+        if (_serviceRunning || _isStartingService)
+            return;
+
+        _isStartingService = true;
+        UpdateServiceButtonState();
+        RecognitionStatusText.Text = "正在启动服务...";
+
         try
         {
             if (!OperatingSystem.IsWindows())
@@ -232,6 +269,7 @@ public partial class MainWindow : Window
                         "请尝试：\n" +
                         "1. 删除 models 目录中的模型文件后重新下载\n" +
                         "2. 切换到其他已下载的识别引擎");
+                    RecognitionStatusText.Text = "初始化失败";
                     return;
                 }
             }
@@ -243,14 +281,18 @@ public partial class MainWindow : Window
             }
 
             _serviceRunning = true;
-            UpdateServiceButtonState();
-
             ShowNotification("服务已启动", "使用右 Alt 键进行语音输入");
             RecognitionStatusText.Text = $"{_speechRecognizer?.EngineName ?? engineName} 就绪";
         }
         catch (Exception ex)
         {
+            RecognitionStatusText.Text = "启动失败";
             await DialogHelper.ShowErrorAsync(this, $"启动服务失败: {ex.Message}");
+        }
+        finally
+        {
+            _isStartingService = false;
+            UpdateServiceButtonState();
         }
     }
 
@@ -289,6 +331,7 @@ public partial class MainWindow : Window
 
     private void OnShortcutPressed(object? sender, EventArgs e)
     {
+        _textSimulator?.CaptureTargetWindow();
         RunOnUiThread(() =>
         {
             _isShortcutDown = true;
@@ -347,6 +390,7 @@ public partial class MainWindow : Window
 
             _activeTrigger = trigger;
             _isRecording = true;
+            _textSimulator?.CaptureTargetWindow();
             _audioCapture?.StartRecording(_config.SampleRate, _config.Channels, _config.BitDepth);
             _voiceOverlay?.ShowRecording();
         }
@@ -377,11 +421,14 @@ public partial class MainWindow : Window
             {
                 RecognitionStatusText.Text = "正在识别...";
                 var result = await _speechRecognizer.RecognizeFromBufferAsync(audioData, _config.SampleRate);
+                _voiceOverlay?.HideOverlay();
                 if (!string.IsNullOrEmpty(result))
                     await OnTextRecognizedAsync(result);
             }
-
-            _voiceOverlay?.HideOverlay();
+            else
+            {
+                _voiceOverlay?.HideOverlay();
+            }
         }
         catch (Exception ex)
         {
@@ -395,18 +442,14 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(text))
             return;
 
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            LastRecognizedText.Text = text;
-        });
-
         try
         {
-            if (_config.UseClipboard)
+            if (_config.UseClipboard || OperatingSystem.IsWindows())
                 await _textSimulator!.InsertTextAsync(text);
             else
                 await _textSimulator!.TypeTextAsync(text);
 
+            Dispatcher.UIThread.Post(() => LastRecognizedText.Text = text);
             ShowNotification("文字输入完成", text);
         }
         catch (Exception ex)
