@@ -18,7 +18,7 @@ namespace MouseClickVoice
             try
             {
                 DisposeEngine();
-                _engine = CreateEngine(Config.Instance.RecognitionEngine);
+                _engine = CreateEngine();
                 WireEvents(_engine);
 
                 StatusChanged?.Invoke(this, $"{_engine.EngineName} 语音识别器初始化中...");
@@ -49,10 +49,7 @@ namespace MouseClickVoice
                 throw new InvalidOperationException("语音识别引擎未初始化，请先调用 InitializeAsync");
         }
 
-        private static ISpeechEngine CreateEngine(string engineName) =>
-            engineName.Equals("whisper", StringComparison.OrdinalIgnoreCase)
-                ? new WhisperEngine()
-                : new SenseVoiceEngine();
+        private static ISpeechEngine CreateEngine() => new SenseVoiceEngine();
 
         private void WireEvents(ISpeechEngine engine)
         {

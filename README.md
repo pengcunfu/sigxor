@@ -1,12 +1,12 @@
 # 语音输入 (SigXor)
 
-一个支持右 Alt 快捷键激活语音输入的跨平台桌面应用程序，基于 **Avalonia UI**，默认使用阿里 **SenseVoice** 模型进行多语言语音识别，也可切换为 Whisper。
+一个支持右 Alt 快捷键激活语音输入的跨平台桌面应用程序，基于 **Avalonia UI**，使用阿里 **SenseVoice** 模型进行多语言语音识别。
 
 ## 功能特点
 
 - **全局快捷键**：右 Alt 短按切换/长按录音（Windows 完整支持）
 - **实时语音录制**：使用系统麦克风进行实时语音录制
-- **AI 语音识别**：默认 SenseVoice（中英日韩粤），可选 Whisper Tiny
+- **AI 语音识别**：SenseVoice（中英日韩粤）本地离线识别
 - **自动输入**：将识别的文字自动输入到当前焦点位置
 - **系统托盘**：最小化到托盘、开机自启动
 - **可配置**：识别引擎、语言、输入方式等
@@ -73,7 +73,7 @@ dotnet publish -c Release -r osx-arm64 --self-contained true -p:PublishSingleFil
 
 - **KeyboardHook**：Windows 全局键盘钩子（其他平台为占位实现）
 - **AudioCapture**：NAudio 音频捕获（Windows）
-- **SpeechRecognition**：SenseVoice（sherpa-onnx）/ Whisper.net 双引擎
+- **SpeechRecognition**：SenseVoice（sherpa-onnx）引擎
 - **TextSimulator**：跨平台文本输入（Windows SendInput / Linux xdotool / macOS osascript）
 - **TrayIconManager**：Avalonia 原生系统托盘
 
@@ -81,7 +81,7 @@ dotnet publish -c Release -r osx-arm64 --self-contained true -p:PublishSingleFil
 
 - **UI 框架**：.NET 10.0 + Avalonia 11.3
 - **音频**：NAudio 2.3.0
-- **语音识别**：SenseVoice（org.k2fsa.sherpa.onnx 1.13.2）/ Whisper.net 1.9.0
+- **语音识别**：SenseVoice（org.k2fsa.sherpa.onnx 1.13.2）
 
 ## 项目结构
 
@@ -117,7 +117,6 @@ dotnet build -c Release
 ```
 
 - **模型路径**：`models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/`（SenseVoice）
-- **Whisper 模型**：`models/ggml-tiny.bin`
 
 ## 开发环境
 

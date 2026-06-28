@@ -21,7 +21,7 @@
                    Foreground="Gray" FontSize="13"/>
 
         <TextBlock Grid.Row="2" TextWrapping="Wrap" LineHeight="22" Foreground="#333333">
-            基于 SenseVoice / Whisper 的本地语音识别工具。<LineBreak/>
+            基于 SenseVoice 的本地语音识别工具。<LineBreak/>
             使用右 Alt 快捷键进行语音输入：<LineBreak/>
             · 短按：开始/结束长录音<LineBreak/>
             · 按住：松手结束短句录音

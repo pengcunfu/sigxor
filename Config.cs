@@ -58,12 +58,11 @@ namespace MouseClickVoice
         [JsonPropertyName("showNotifications")]
         public bool ShowNotifications { get; set; } = true;
 
-        /// <summary>识别引擎是否在主界面下拉框中显示（key: sensevoice / whisper）</summary>
+        /// <summary>识别引擎是否在主界面下拉框中显示（key: sensevoice）</summary>
         [JsonPropertyName("engineVisibility")]
         public Dictionary<string, bool> EngineVisibility { get; set; } = new()
         {
-            [SpeechModelManager.SenseVoiceId] = true,
-            [SpeechModelManager.WhisperId] = true
+            [SpeechModelManager.SenseVoiceId] = true
         };
 
         // 调试设置
@@ -158,8 +157,7 @@ namespace MouseClickVoice
             ShowNotifications = true;
             EngineVisibility = new Dictionary<string, bool>
             {
-                [SpeechModelManager.SenseVoiceId] = true,
-                [SpeechModelManager.WhisperId] = true
+                [SpeechModelManager.SenseVoiceId] = true
             };
             DebugMode = false;
             SaveAudioFiles = false;

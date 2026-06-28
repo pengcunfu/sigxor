@@ -26,7 +26,6 @@ namespace MouseClickVoice
     public static class SpeechModelManager
     {
         public const string SenseVoiceId = "sensevoice";
-        public const string WhisperId = "whisper";
 
         public static string ModelsDirectory =>
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "models");
@@ -42,14 +41,6 @@ namespace MouseClickVoice
                 DisplayName = "SenseVoice（推荐）",
                 Description = "阿里 SenseVoice 多语言模型（中英日韩粤），本地离线识别",
                 SizeHint = "约 230 MB"
-            },
-            new SpeechModelInfo
-            {
-                Id = WhisperId,
-                EngineTag = WhisperId,
-                DisplayName = "Whisper Tiny",
-                Description = "OpenAI Whisper Tiny 模型，体积较小、速度较快",
-                SizeHint = "约 75 MB"
             }
         ];
 
@@ -61,14 +52,12 @@ namespace MouseClickVoice
         public static bool IsInstalled(string id) => id.ToLowerInvariant() switch
         {
             SenseVoiceId => SenseVoiceEngine.IsModelInstalled(),
-            WhisperId => WhisperEngine.IsModelInstalled(),
             _ => false
         };
 
         public static long GetSizeOnDisk(string id) => id.ToLowerInvariant() switch
         {
             SenseVoiceId => SenseVoiceEngine.GetModelSizeOnDisk(),
-            WhisperId => WhisperEngine.GetModelSizeOnDisk(),
             _ => 0
         };
 
@@ -100,7 +89,6 @@ namespace MouseClickVoice
             var ok = id.ToLowerInvariant() switch
             {
                 SenseVoiceId => await SenseVoiceEngine.DownloadModelAsync(Report, cancellationToken),
-                WhisperId => await WhisperEngine.DownloadModelAsync(Report, cancellationToken),
                 _ => false
             };
 
@@ -118,7 +106,6 @@ namespace MouseClickVoice
                 var ok = id.ToLowerInvariant() switch
                 {
                     SenseVoiceId => SenseVoiceEngine.DeleteModel(),
-                    WhisperId => WhisperEngine.DeleteModel(),
                     _ => false
                 };
 
