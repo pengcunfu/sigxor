@@ -114,7 +114,7 @@ namespace MouseClickVoice
                 if (!IsModelReady())
                 {
                     Error?.Invoke(this, new Exception(
-                        "SenseVoice 模型未下载，请在「工具 → 模型管理」中下载后再启动服务"));
+                        "SenseVoice 模型未下载，请点击「下载」按钮下载后再启动服务"));
                     return false;
                 }
 

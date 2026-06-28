@@ -1,6 +1,10 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -31,12 +35,17 @@ public partial class MainWindow : Window
     private RecordingTrigger _activeTrigger = RecordingTrigger.None;
     private readonly DispatcherTimer _statusTimer;
     private readonly Config _config;
+    private CancellationTokenSource? _downloadCts;
 
     public MainWindow()
     {
         _config = Config.Instance;
         SpeechModelManager.EnsureDefaultVisibility();
         InitializeComponent();
+        var version = Assembly.GetExecutingAssembly().GetName().Version;
+        VersionText.Text = version != null
+            ? $"版本 {version.Major}.{version.Minor}.{version.Build}"
+            : "版本 1.0.0";
         SpeechModelManager.ModelsChanged += OnModelsChanged;
         LoadUserSettings();
         InitializeServices();
@@ -72,10 +81,10 @@ public partial class MainWindow : Window
         Activate();
     }
 
-    private async void ShowAboutDialog()
+    private void ShowAboutTab()
     {
-        var about = new AboutWindow();
-        await about.ShowDialog(this);
+        ShowMainWindow();
+        MainTabControl.SelectedItem = AboutTabItem;
     }
 
     private void ExitApplication()
@@ -92,31 +101,23 @@ public partial class MainWindow : Window
         }
     }
 
-    private void UpdateServiceMenuState()
+    private void UpdateServiceButtonState()
     {
-        StartServiceMenuItem.IsEnabled = !_serviceRunning;
-        StopServiceMenuItem.IsEnabled = _serviceRunning;
+        StartServiceButton.IsEnabled = !_serviceRunning;
+        StopServiceButton.IsEnabled = _serviceRunning;
         _trayIcon?.SetServiceRunning(_serviceRunning);
     }
 
-    private async void StartServiceMenuItem_Click(object? sender, RoutedEventArgs e) => await StartService();
+    private async void StartServiceButton_Click(object? sender, RoutedEventArgs e) => await StartService();
 
-    private void StopServiceMenuItem_Click(object? sender, RoutedEventArgs e) => StopService();
-
-    private void AboutMenuItem_Click(object? sender, RoutedEventArgs e) => ShowAboutDialog();
-
-    private async void ModelManagementMenuItem_Click(object? sender, RoutedEventArgs e)
-    {
-        var window = new ModelManagementWindow();
-        window.ModelsUpdated += (_, _) => RefreshEngineComboBox();
-        await window.ShowDialog(this);
-        RefreshEngineComboBox();
-    }
-
-    private void ExitMenuItem_Click(object? sender, RoutedEventArgs e) => ExitApplication();
+    private void StopServiceButton_Click(object? sender, RoutedEventArgs e) => StopService();
 
     private void OnModelsChanged() =>
-        Dispatcher.UIThread.Post(RefreshEngineComboBox);
+        Dispatcher.UIThread.Post(() =>
+        {
+            RefreshEngineComboBox();
+            UpdateModelActionButtons();
+        });
 
     private void LoadUserSettings()
     {
@@ -143,7 +144,7 @@ public partial class MainWindow : Window
                     }
 
                     AutoStartCheckBox.IsChecked = StartupHelper.IsEnabled();
-                    UpdateServiceMenuState();
+                    UpdateServiceButtonState();
                 }
                 catch (Exception ex)
                 {
@@ -182,7 +183,7 @@ public partial class MainWindow : Window
             _trayIcon.ShowWindowRequested += (_, _) => ShowMainWindow();
             _trayIcon.StartServiceRequested += async (_, _) => await StartService();
             _trayIcon.StopServiceRequested += (_, _) => StopService();
-            _trayIcon.AboutRequested += (_, _) => ShowAboutDialog();
+            _trayIcon.AboutRequested += (_, _) => ShowAboutTab();
             _trayIcon.ExitRequested += (_, _) => ExitApplication();
 
             RecognitionStatusText.Text = _keyboardHook.IsSupported
@@ -213,9 +214,10 @@ public partial class MainWindow : Window
             if (!SpeechModelManager.IsInstalled(engineTag))
             {
                 await DialogHelper.ShowWarningAsync(this,
-                    $"当前选择的「{engineName}」尚未下载。\n\n请在「模型管理」中下载模型后再启动服务。",
+                    $"当前选择的「{engineName}」尚未下载。\n\n请点击识别状态旁的「下载」按钮下载模型后再启动服务。",
                     "模型未就绪");
                 RecognitionStatusText.Text = "模型未下载";
+                UpdateModelActionButtons();
                 return;
             }
 
@@ -228,7 +230,7 @@ public partial class MainWindow : Window
                     await DialogHelper.ShowErrorAsync(this,
                         $"{engineName} 初始化失败。\n\n" +
                         "请尝试：\n" +
-                        "1. 在「模型管理」中删除并重新下载模型\n" +
+                        "1. 删除 models 目录中的模型文件后重新下载\n" +
                         "2. 切换到其他已下载的识别引擎");
                     return;
                 }
@@ -241,7 +243,7 @@ public partial class MainWindow : Window
             }
 
             _serviceRunning = true;
-            UpdateServiceMenuState();
+            UpdateServiceButtonState();
 
             ShowNotification("服务已启动", "使用右 Alt 键进行语音输入");
             RecognitionStatusText.Text = $"{_speechRecognizer?.EngineName ?? engineName} 就绪";
@@ -267,7 +269,7 @@ public partial class MainWindow : Window
             _voiceOverlay?.HideOverlay();
 
             _serviceRunning = false;
-            UpdateServiceMenuState();
+            UpdateServiceButtonState();
 
             ShowNotification("服务已停止", "语音输入功能已关闭");
         }
@@ -490,10 +492,89 @@ public partial class MainWindow : Window
             }
 
             SelectComboBoxByTag(EngineComboBox, target.EngineTag);
+            UpdateModelActionButtons();
         }
         finally
         {
             _isLoadingSettings = false;
+        }
+    }
+
+    private void UpdateModelActionButtons()
+    {
+        if (DownloadModelButton == null || OpenModelFolderButton == null)
+            return;
+
+        var engineId = _config.RecognitionEngine;
+        var installed = SpeechModelManager.IsInstalled(engineId);
+        var busy = _downloadCts != null;
+
+        DownloadModelButton.IsVisible = !installed;
+        OpenModelFolderButton.IsVisible = installed;
+        DownloadModelButton.IsEnabled = !busy;
+        OpenModelFolderButton.IsEnabled = !busy;
+    }
+
+    private async void DownloadModelButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var engineId = _config.RecognitionEngine;
+        if (SpeechModelManager.IsInstalled(engineId))
+            return;
+
+        _downloadCts = new CancellationTokenSource();
+        UpdateModelActionButtons();
+        RecognitionStatusText.Text = "准备下载...";
+
+        try
+        {
+            var ok = await SpeechModelManager.DownloadAsync(
+                engineId,
+                msg => Dispatcher.UIThread.Post(() => RecognitionStatusText.Text = msg),
+                _downloadCts.Token);
+
+            if (ok)
+            {
+                RecognitionStatusText.Text = "模型已下载";
+                RefreshEngineComboBox();
+            }
+            else
+            {
+                RecognitionStatusText.Text = "下载失败";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            RecognitionStatusText.Text = "已取消下载";
+        }
+        catch (Exception ex)
+        {
+            RecognitionStatusText.Text = "下载失败";
+            await DialogHelper.ShowWarningAsync(this, ex.Message, "下载失败");
+        }
+        finally
+        {
+            _downloadCts?.Dispose();
+            _downloadCts = null;
+            UpdateModelActionButtons();
+        }
+    }
+
+    private void OpenModelFolderButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var dir = SpeechModelManager.ModelsDirectory;
+        Directory.CreateDirectory(dir);
+
+        if (OperatingSystem.IsWindows())
+        {
+            Process.Start(new ProcessStartInfo { FileName = dir, UseShellExecute = true });
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            Process.Start("xdg-open", dir);
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            Process.Start("open", dir);
         }
     }
 
@@ -515,7 +596,7 @@ public partial class MainWindow : Window
             if (!SpeechModelManager.IsInstalled(newEngine))
             {
                 await DialogHelper.ShowInfoAsync(this,
-                    "该引擎尚未下载，请先在「模型管理」中下载。",
+                    "该引擎尚未下载，请先下载模型。",
                     "无法切换");
                 RefreshEngineComboBox();
                 return;
@@ -656,6 +737,9 @@ public partial class MainWindow : Window
             if (!_isExiting)
                 StopService();
 
+            _downloadCts?.Cancel();
+            _downloadCts?.Dispose();
+            _downloadCts = null;
             _statusTimer?.Stop();
             _keyboardHook?.Dispose();
             _audioCapture?.Dispose();
